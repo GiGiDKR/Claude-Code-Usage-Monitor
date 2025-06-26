@@ -8,9 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 import json
+import logging
 
 from usage_analyzer.utils.path_discovery import discover_claude_data_paths
 from usage_analyzer.utils.pricing_fetcher import ClaudePricingFetcher
+from usage_analyzer.utils.timezone_utils import TimezoneHandler
 from usage_analyzer.models.data_structures import UsageEntry, CostMode
 
 
@@ -27,6 +29,8 @@ class DataLoader:
             self.data_path = Path(data_path).expanduser()
         
         self.pricing_fetcher = ClaudePricingFetcher()
+        self.timezone_handler = TimezoneHandler()
+        self.logger = logging.getLogger(__name__)
 
     def load_usage_data(self, mode: CostMode = CostMode.AUTO) -> List[UsageEntry]:
         """Load and process all usage data."""
@@ -142,7 +146,14 @@ class DataLoader:
             if 'timestamp' not in data:
                 return None
             
-            timestamp = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
+            # Use robust timestamp parsing with error handling
+            try:
+                timestamp = self.timezone_handler.parse_timestamp(data['timestamp'])
+                # Ensure timestamp is in UTC for internal processing
+                timestamp = self.timezone_handler.ensure_utc(timestamp)
+            except Exception as e:
+                self.logger.debug(f"Failed to parse timestamp '{data.get('timestamp')}': {e}")
+                return None
             
             # Handle both nested and flat usage data
             usage = data.get('usage', {})

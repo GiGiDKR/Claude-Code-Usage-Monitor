@@ -2,6 +2,27 @@
 
 ## [2.0.0] - 2025-06-25
 
+### Added (Post-release update - 2025-06-26)
+- **🌐 Enhanced UTC-First Timezone Architecture**: Robust timezone handling improvements
+  - New `timezone_utils.py` module with comprehensive timezone utilities
+  - Robust timestamp parsing supporting multiple formats (ISO, Unix timestamps, timezone-naive)
+  - Timezone validation pipeline with caching for performance
+  - Automatic zoneinfo support for Python 3.9+ with pytz fallback
+  - Cross-platform timezone detection (Windows, macOS, Linux)
+  - Improved error handling and logging throughout timezone operations
+- **🔧 Modern Python Compatibility**: Future-proof timezone handling
+  - Conditional import of zoneinfo (Python 3.9+) or pytz (Python 3.8)
+  - Windows timezone data support via tzdata package
+  - Backwards compatibility maintained for all Python versions ≥3.8
+
+### Changed (Post-release update - 2025-06-26)
+- Enhanced `data_loader.py` with robust timestamp parsing using TimezoneHandler
+- Improved `json_formatter.py` timezone handling to maintain timezone awareness
+- Updated `claude_monitor.py` with better timezone error handling and validation
+- Added `tzdata` dependency for Windows systems to support zoneinfo
+
+## [2.0.0] - 2025-06-25
+
 ### Added
 - **🎨 Smart Theme System**: Automatic light/dark theme detection for optimal terminal appearance
   - Intelligent theme detection based on terminal environment, system settings, and background color

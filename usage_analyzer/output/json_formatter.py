@@ -7,10 +7,12 @@ Includes theme-aware console output support.
 
 import json
 from typing import Any, Dict, List
+from datetime import datetime
 
 from usage_analyzer.models.data_structures import SessionBlock
 from usage_analyzer.core.calculator import BurnRateCalculator
 from usage_analyzer.utils.pricing_fetcher import ClaudePricingFetcher
+from usage_analyzer.utils.timezone_utils import TimezoneHandler
 from usage_analyzer.themes import print_themed, get_themed_console
 
 
@@ -21,6 +23,7 @@ class JSONFormatter:
         """Initialize formatter."""
         self.calculator = BurnRateCalculator()
         self.pricing_fetcher = ClaudePricingFetcher()
+        self.timezone_handler = TimezoneHandler()
         
     def print_summary(self, blocks: List[SessionBlock]) -> None:
         """Print a themed summary of session blocks."""
@@ -168,17 +171,18 @@ class JSONFormatter:
         
         return formatted_stats
 
-    def _format_timestamp(self, timestamp) -> str:
+    def _format_timestamp(self, timestamp: datetime) -> str:
         """Format datetime to match format with milliseconds precision."""
         if timestamp is None:
             return None
-        # Convert to UTC if needed
-        if timestamp.tzinfo is not None:
-            from datetime import timezone
-            utc_timestamp = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
-        else:
-            utc_timestamp = timestamp
+        
+        # Ensure timestamp is in UTC using our robust handler
+        utc_timestamp = self.timezone_handler.ensure_utc(timestamp)
         
         # Format with milliseconds precision (.XXXZ)
+        # Keep timezone information by formatting properly
         milliseconds = utc_timestamp.microsecond // 1000
-        return utc_timestamp.strftime(f'%Y-%m-%dT%H:%M:%S.{milliseconds:03d}Z')
+        # Use ISO format with explicit UTC 'Z' suffix
+        formatted = utc_timestamp.strftime(f'%Y-%m-%dT%H:%M:%S.{milliseconds:03d}')
+        # Add 'Z' suffix to indicate UTC (maintaining timezone awareness)
+        return f"{formatted}Z"

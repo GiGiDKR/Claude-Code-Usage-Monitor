@@ -35,6 +35,7 @@ classifiers = [
 dependencies = [
     "pytz",
     "rich>=13.0.0",
+    "tzdata; sys_platform == 'win32'",  # Required for zoneinfo on Windows
 ]
 
 [project.optional-dependencies]

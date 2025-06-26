@@ -6,11 +6,13 @@ import subprocess
 import sys
 import threading
 from datetime import datetime, timedelta
+import logging
 
 import pytz
 
 from usage_analyzer.api import analyze_usage
 from usage_analyzer.themes import get_themed_console, print_themed, ThemeType
+from usage_analyzer.utils.timezone_utils import TimezoneHandler, safe_timezone_conversion
 
 # All internal calculations use UTC, display timezone is configurable
 UTC_TZ = pytz.UTC
@@ -154,13 +156,14 @@ def calculate_hourly_burn_rate(blocks, current_time):
         if not start_time_str:
             continue
 
-        # Parse start time - data from usage_analyzer is in UTC
-        start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
-        # Ensure it's in UTC for calculations
-        if start_time.tzinfo is None:
-            start_time = UTC_TZ.localize(start_time)
-        else:
-            start_time = start_time.astimezone(UTC_TZ)
+        # Parse start time using robust timestamp parsing
+        tz_handler = TimezoneHandler()
+        try:
+            start_time = tz_handler.parse_timestamp(start_time_str)
+            start_time = tz_handler.ensure_utc(start_time)
+        except Exception as e:
+            logging.debug(f"Failed to parse start time '{start_time_str}': {e}")
+            continue
 
         # Skip gaps
         if block.get("isGap", False):
@@ -174,14 +177,12 @@ def calculate_hourly_burn_rate(blocks, current_time):
             # For completed sessions, use actualEndTime or current time
             actual_end_str = block.get("actualEndTime")
             if actual_end_str:
-                session_actual_end = datetime.fromisoformat(
-                    actual_end_str.replace("Z", "+00:00")
-                )
-                # Ensure it's in UTC for calculations
-                if session_actual_end.tzinfo is None:
-                    session_actual_end = UTC_TZ.localize(session_actual_end)
-                else:
-                    session_actual_end = session_actual_end.astimezone(UTC_TZ)
+                try:
+                    session_actual_end = tz_handler.parse_timestamp(actual_end_str)
+                    session_actual_end = tz_handler.ensure_utc(session_actual_end)
+                except Exception as e:
+                    logging.debug(f"Failed to parse actual end time '{actual_end_str}': {e}")
+                    session_actual_end = current_time
             else:
                 session_actual_end = current_time
 
@@ -530,12 +531,15 @@ def main():
             screen_buffer.append("")
 
             # Predictions - convert to configured timezone for display
-            try:
-                local_tz = pytz.timezone(args.timezone)
-            except pytz.exceptions.UnknownTimeZoneError:
-                local_tz = pytz.timezone("Europe/Warsaw")
-            predicted_end_local = predicted_end_time.astimezone(local_tz)
-            reset_time_local = reset_time.astimezone(local_tz)
+            tz_handler = TimezoneHandler(default_tz="Europe/Warsaw")
+            if not tz_handler.validate_timezone(args.timezone):
+                print_themed(f"Invalid timezone '{args.timezone}', using Europe/Warsaw", style="warning")
+                timezone_to_use = "Europe/Warsaw"
+            else:
+                timezone_to_use = args.timezone
+            
+            predicted_end_local = tz_handler.convert_to_timezone(predicted_end_time, timezone_to_use)
+            reset_time_local = tz_handler.convert_to_timezone(reset_time, timezone_to_use)
 
             predicted_end_str = predicted_end_local.strftime("%H:%M")
             reset_time_str = reset_time_local.strftime("%H:%M")

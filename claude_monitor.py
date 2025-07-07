@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
-import subprocess
 import sys
 import threading
 from datetime import datetime, timedelta
@@ -10,44 +8,11 @@ from datetime import datetime, timedelta
 import pytz
 
 from usage_analyzer.api import analyze_usage
-from usage_analyzer.themes import get_themed_console, print_themed, ThemeType
+from usage_analyzer.core.notification_manager import notification_manager
+from usage_analyzer.themes import ThemeType, get_themed_console, print_themed
 
 # All internal calculations use UTC, display timezone is configurable
 UTC_TZ = pytz.UTC
-
-# Notification persistence configuration
-NOTIFICATION_MIN_DURATION = 5  # seconds - minimum time to display notifications
-
-# Global notification state tracker
-notification_states = {
-    'switch_to_custom': {'triggered': False, 'timestamp': None},
-    'exceed_max_limit': {'triggered': False, 'timestamp': None}, 
-    'tokens_will_run_out': {'triggered': False, 'timestamp': None}
-}
-
-def update_notification_state(notification_type, condition_met, current_time):
-    """Update notification state and return whether to show notification."""
-    state = notification_states[notification_type]
-    
-    if condition_met:
-        if not state['triggered']:
-            # First time triggering - record timestamp
-            state['triggered'] = True
-            state['timestamp'] = current_time
-        return True
-    else:
-        if state['triggered']:
-            # Check if minimum duration has passed
-            elapsed = (current_time - state['timestamp']).total_seconds()
-            if elapsed >= NOTIFICATION_MIN_DURATION:
-                # Reset state after minimum duration
-                state['triggered'] = False
-                state['timestamp'] = None
-                return False
-            else:
-                # Still within minimum duration - keep showing
-                return True
-        return False
 
 # Terminal handling for Unix-like systems
 try:
@@ -56,6 +21,7 @@ try:
     HAS_TERMIOS = True
 except ImportError:
     HAS_TERMIOS = False
+
 
 def format_time(minutes):
     """Format minutes into human-readable time (e.g., '3h 45m')."""
@@ -73,13 +39,15 @@ def create_token_progress_bar(percentage, width=50):
     filled = int(width * percentage / 100)
     green_bar = "█" * filled
     red_bar = "░" * (width - filled)
-    
+
     if percentage >= 90:
         return f"🟢 [[cost.high]{green_bar}[cost.medium]{red_bar}[/]] {percentage:.1f}%"
     elif percentage >= 50:
         return f"🟢 [[cost.medium]{green_bar}[/][table.border]{red_bar}[/]] {percentage:.1f}%"
     else:
-        return f"🟢 [[cost.low]{green_bar}[/][table.border]{red_bar}[/]] {percentage:.1f}%"
+        return (
+            f"🟢 [[cost.low]{green_bar}[/][table.border]{red_bar}[/]] {percentage:.1f}%"
+        )
 
 
 def create_time_progress_bar(elapsed_minutes, total_minutes, width=50):
@@ -92,20 +60,22 @@ def create_time_progress_bar(elapsed_minutes, total_minutes, width=50):
     filled = int(width * percentage / 100)
     blue_bar = "█" * filled
     red_bar = "░" * (width - filled)
-    
+
     remaining_time = format_time(max(0, total_minutes - elapsed_minutes))
-    return f"⏰ [[progress.bar]{blue_bar}[/][table.border]{red_bar}[/]] {remaining_time}"
+    return (
+        f"⏰ [[progress.bar]{blue_bar}[/][table.border]{red_bar}[/]] {remaining_time}"
+    )
 
 
 def print_header():
     """Return the stylized header with sparkles as a list of strings."""
     console = get_themed_console()
-    
+
     # Build header components for theme-aware styling
     sparkles = "✦ ✧ ✦ ✧"
     title = "CLAUDE CODE USAGE MONITOR"
     separator = "=" * 60
-    
+
     return [
         f"[header]{sparkles}[/] [header]{title}[/] [header]{sparkles}[/]",
         f"[table.border]{separator}[/]",
@@ -214,8 +184,6 @@ def calculate_hourly_burn_rate(blocks, current_time):
     return total_tokens / 60 if total_tokens > 0 else 0
 
 
-
-
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -246,7 +214,7 @@ def parse_args():
     parser.add_argument(
         "--theme-debug",
         action="store_true",
-        help="Show theme detection debug information and exit"
+        help="Show theme detection debug information and exit",
     )
     return parser.parse_args()
 
@@ -316,27 +284,31 @@ def main():
         console = get_themed_console(force_theme=theme_type)
     else:
         console = get_themed_console()
-    
+
     # Handle theme debug flag
     if args.theme_debug:
         from usage_analyzer.themes.console import debug_theme_info
+
         debug_info = debug_theme_info()
         print_themed("🎨 Theme Detection Debug Information", style="header")
         print_themed(f"Current theme: {debug_info['current_theme']}", style="info")
-        print_themed(f"Console initialized: {debug_info['console_initialized']}", style="value")
-        
-        detector_info = debug_info['detector_info']
+        print_themed(
+            f"Console initialized: {debug_info['console_initialized']}", style="value"
+        )
+
+        detector_info = debug_info["detector_info"]
         print_themed("Environment variables:", style="subheader")
-        for key, value in detector_info['environment_vars'].items():
+        for key, value in detector_info["environment_vars"].items():
             if value:
                 print_themed(f"  {key}: {value}", style="label")
-        
-        caps = detector_info['terminal_capabilities']
-        print_themed(f"Terminal capabilities: {caps['colors']} colors, truecolor: {caps['truecolor']}", style="info")
+
+        caps = detector_info["terminal_capabilities"]
+        print_themed(
+            f"Terminal capabilities: {caps['colors']} colors, truecolor: {caps['truecolor']}",
+            style="info",
+        )
         print_themed(f"Platform: {detector_info['platform']}", style="value")
         return
-
-
 
     # Create event for clean refresh timing
     stop_event = threading.Event()
@@ -346,14 +318,21 @@ def main():
 
     # For 'custom_max' plan, we need to get data first to determine the limit
     if args.plan == "custom_max":
-        print_themed("Fetching initial data to determine custom max token limit...", style="info")
+        print_themed(
+            "Fetching initial data to determine custom max token limit...", style="info"
+        )
         initial_data = analyze_usage()
         if initial_data and "blocks" in initial_data:
             token_limit = get_token_limit(args.plan, initial_data["blocks"])
-            print_themed(f"Custom max token limit detected: {token_limit:,}", style="info")
+            print_themed(
+                f"Custom max token limit detected: {token_limit:,}", style="info"
+            )
         else:
             token_limit = get_token_limit("pro")  # Fallback to pro
-            print_themed(f"Failed to fetch data, falling back to Pro limit: {token_limit:,}", style="warning")
+            print_themed(
+                f"Failed to fetch data, falling back to Pro limit: {token_limit:,}",
+                style="warning",
+            )
     else:
         token_limit = get_token_limit(args.plan)
 
@@ -402,7 +381,9 @@ def main():
             if not active_block:
                 screen_buffer.extend(print_header())
                 screen_buffer.append(
-                    "📊 [value]Token Usage:[/]    🟢 [[cost.low]" + "░" * 50 + "[/]] 0.0%"
+                    "📊 [value]Token Usage:[/]    🟢 [[cost.low]"
+                    + "░" * 50
+                    + "[/]] 0.0%"
                 )
                 screen_buffer.append("")
                 screen_buffer.append(
@@ -432,7 +413,7 @@ def main():
 
             # Extract data from active block
             tokens_used = active_block.get("totalTokens", 0)
-            
+
             # Store original limit for notification
             original_limit = get_token_limit(args.plan)
 
@@ -459,13 +440,11 @@ def main():
                     start_time = UTC_TZ.localize(start_time)
                 else:
                     start_time = start_time.astimezone(UTC_TZ)
-            
+
             # Extract endTime from active block (comes in UTC from usage_analyzer)
             end_time_str = active_block.get("endTime")
             if end_time_str:
-                reset_time = datetime.fromisoformat(
-                    end_time_str.replace("Z", "+00:00")
-                )
+                reset_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
                 # Ensure reset_time is in UTC
                 if reset_time.tzinfo is None:
                     reset_time = UTC_TZ.localize(reset_time)
@@ -473,8 +452,12 @@ def main():
                     reset_time = reset_time.astimezone(UTC_TZ)
             else:
                 # Fallback: if no endTime, estimate 5 hours from startTime
-                reset_time = start_time + timedelta(hours=5) if start_time_str else datetime.now(UTC_TZ) + timedelta(hours=5)
-            
+                reset_time = (
+                    start_time + timedelta(hours=5)
+                    if start_time_str
+                    else datetime.now(UTC_TZ) + timedelta(hours=5)
+                )
+
             # Always use UTC for internal calculations
             current_time = datetime.now(UTC_TZ)
 
@@ -508,13 +491,17 @@ def main():
             if start_time_str and end_time_str:
                 # Calculate actual session duration and elapsed time
                 total_session_minutes = (reset_time - start_time).total_seconds() / 60
-                elapsed_session_minutes = (current_time - start_time).total_seconds() / 60
-                elapsed_session_minutes = max(0, elapsed_session_minutes)  # Ensure non-negative
+                elapsed_session_minutes = (
+                    current_time - start_time
+                ).total_seconds() / 60
+                elapsed_session_minutes = max(
+                    0, elapsed_session_minutes
+                )  # Ensure non-negative
             else:
                 # Fallback to 5 hours if times not available
                 total_session_minutes = 300
                 elapsed_session_minutes = max(0, 300 - minutes_to_reset)
-            
+
             screen_buffer.append(
                 f"⏳ [value]Time to Reset:[/]  {create_time_progress_bar(elapsed_session_minutes, total_session_minutes)}"
             )
@@ -544,14 +531,14 @@ def main():
             screen_buffer.append("")
 
             # Update persistent notifications using current conditions
-            show_switch_notification = update_notification_state(
-                'switch_to_custom', token_limit > original_limit, current_time
+            show_switch_notification = notification_manager.should_show_notification(
+                "switch_to_custom", token_limit > original_limit, current_time
             )
-            show_exceed_notification = update_notification_state(
-                'exceed_max_limit', tokens_used > token_limit, current_time
+            show_exceed_notification = notification_manager.should_show_notification(
+                "exceed_max_limit", tokens_used > token_limit, current_time
             )
-            show_tokens_will_run_out = update_notification_state(
-                'tokens_will_run_out', predicted_end_time < reset_time, current_time
+            show_tokens_will_run_out = notification_manager.should_show_notification(
+                "tokens_will_run_out", predicted_end_time < reset_time, current_time
             )
 
             # Display persistent notifications
@@ -568,9 +555,7 @@ def main():
                 screen_buffer.append("")
 
             if show_tokens_will_run_out:
-                screen_buffer.append(
-                    f"⚠️  [error]Tokens will run out BEFORE reset![/]"
-                )
+                screen_buffer.append("⚠️  [error]Tokens will run out BEFORE reset![/]")
                 screen_buffer.append("")
 
             # Status line - use configured timezone for consistency

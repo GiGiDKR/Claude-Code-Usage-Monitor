@@ -13,6 +13,7 @@ from usage_analyzer.themes import ThemeType, get_themed_console, print_themed
 
 # All internal calculations use UTC, display timezone is configurable
 UTC_TZ = pytz.UTC
+DEFAULT_TIMEZONE = "Europe/Warsaw"
 
 # Notification persistence configuration
 NOTIFICATION_MIN_DURATION = 5  # seconds - minimum time to display notifications
@@ -23,6 +24,14 @@ notification_states = {
     "exceed_max_limit": {"triggered": False, "timestamp": None},
     "tokens_will_run_out": {"triggered": False, "timestamp": None},
 }
+
+
+def get_display_timezone(timezone_str):
+    """Get a timezone object, falling back to default if invalid."""
+    try:
+        return pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        return pytz.timezone(DEFAULT_TIMEZONE)
 
 
 def update_notification_state(notification_type, condition_met, current_time):
@@ -384,7 +393,6 @@ def main():
         compact_formatter = CompactFormatter()
 
     try:
-        # Les deux modes utilisent l'alternate screen buffer
         # Enter alternate screen buffer, clear and hide cursor
         print("\033[?1049h\033[2J\033[H\033[?25l", end="", flush=True)
 
@@ -423,10 +431,7 @@ def main():
                 if not active_block:
                     # Mode compact pour pas de session active
                     now = datetime.now(UTC_TZ)
-                    try:
-                        display_tz = pytz.timezone(args.timezone)
-                    except pytz.exceptions.UnknownTimeZoneError:
-                        display_tz = pytz.timezone("Europe/Warsaw")
+                    display_tz = get_display_timezone(args.timezone)
                     current_time_display = now.astimezone(display_tz)
                     current_time_str = current_time_display.strftime("%H:%M:%S")
                     compact_line = f"Claude : 0/{token_limit:,} (0.0%) | 🔥0.0/min | No active session | {current_time_str}"
@@ -506,17 +511,14 @@ def main():
                     predicted_end_time = reset_time
 
                 # Predictions - convert to configured timezone for display
-                try:
-                    local_tz = pytz.timezone(args.timezone)
-                except pytz.exceptions.UnknownTimeZoneError:
-                    local_tz = pytz.timezone("Europe/Warsaw")
+                local_tz = get_display_timezone(args.timezone)
                 predicted_end_local = predicted_end_time.astimezone(local_tz)
                 reset_time_local = reset_time.astimezone(local_tz)
 
                 predicted_end_str = predicted_end_local.strftime("%H:%M")
                 reset_time_str = reset_time_local.strftime("%H:%M")
 
-                # Créer la ligne compacte
+                # Create the compact line
                 if compact_formatter:
                     burn_rate_data = active_block.get("burnRate")
                     burn_val = (
@@ -535,7 +537,7 @@ def main():
                     )
                     screen_buffer.append(line)
 
-                # Gestion des notifications critiques
+                # Critical notifications handling
                 show_switch_notification = update_notification_state(
                     "switch_to_custom", token_limit > original_limit, current_time
                 )
@@ -546,7 +548,7 @@ def main():
                     "tokens_will_run_out", predicted_end_time < reset_time, current_time
                 )
 
-                # Ajouter notifications critiques si nécessaire
+                # Add critical notifications if necessary
                 if show_switch_notification:
                     screen_buffer.append("")
                     screen_buffer.append(
@@ -607,7 +609,7 @@ def main():
                         break
 
                 if not active_block:
-                    # Mode normal existant
+                    # Existing normal mode
                     screen_buffer.extend(print_header())
                     screen_buffer.append(
                         "📊 [value]Token Usage:[/]    🟢 [[cost.low]"
@@ -623,10 +625,7 @@ def main():
                     )
                     screen_buffer.append("")
                     # Use configured timezone for time display
-                    try:
-                        display_tz = pytz.timezone(args.timezone)
-                    except pytz.exceptions.UnknownTimeZoneError:
-                        display_tz = pytz.timezone("Europe/Warsaw")
+                    display_tz = get_display_timezone(args.timezone)
                     current_time_display = datetime.now(UTC_TZ).astimezone(display_tz)
                     current_time_str = current_time_display.strftime("%H:%M:%S")
                     screen_buffer.append(
@@ -708,10 +707,7 @@ def main():
                     predicted_end_time = reset_time
 
                 # Predictions - convert to configured timezone for display
-                try:
-                    local_tz = pytz.timezone(args.timezone)
-                except pytz.exceptions.UnknownTimeZoneError:
-                    local_tz = pytz.timezone("Europe/Warsaw")
+                local_tz = get_display_timezone(args.timezone)
                 predicted_end_local = predicted_end_time.astimezone(local_tz)
                 reset_time_local = reset_time.astimezone(local_tz)
 
@@ -793,10 +789,7 @@ def main():
                     screen_buffer.append("")
 
                 # Status line - use configured timezone for consistency
-                try:
-                    display_tz = pytz.timezone(args.timezone)
-                except pytz.exceptions.UnknownTimeZoneError:
-                    display_tz = pytz.timezone("Europe/Warsaw")
+                display_tz = get_display_timezone(args.timezone)
                 current_time_display = datetime.now(UTC_TZ).astimezone(display_tz)
                 current_time_str = current_time_display.strftime("%H:%M:%S")
                 screen_buffer.append(

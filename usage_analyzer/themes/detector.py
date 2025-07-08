@@ -140,11 +140,11 @@ class ThemeDetector:
             import tty
 
             # Save current terminal settings
-            old_settings = termios.tcgetattr(sys.stdin)
+            old_settings = termios.tcgetattr(sys.stdout.fileno())
 
             try:
                 # Set terminal to raw mode
-                tty.setraw(sys.stdin.fileno())
+                tty.setraw(sys.stdout.fileno())
 
                 # Send OSC 11 query (query background color)
                 sys.stdout.write("\033]11;?\033\\")

@@ -8,10 +8,10 @@ Includes theme-aware console output support.
 import json
 from typing import Any, Dict, List
 
-from usage_analyzer.models.data_structures import SessionBlock
 from usage_analyzer.core.calculator import BurnRateCalculator
+from usage_analyzer.models.data_structures import SessionBlock
+from usage_analyzer.themes import get_themed_console, print_themed
 from usage_analyzer.utils.pricing_fetcher import ClaudePricingFetcher
-from usage_analyzer.themes import print_themed, get_themed_console
 
 
 class JSONFormatter:
@@ -21,27 +21,27 @@ class JSONFormatter:
         """Initialize formatter."""
         self.calculator = BurnRateCalculator()
         self.pricing_fetcher = ClaudePricingFetcher()
-        
+
     def print_summary(self, blocks: List[SessionBlock]) -> None:
         """Print a themed summary of session blocks."""
         console = get_themed_console()
-        
+
         if not blocks:
             print_themed("No session blocks found", style="warning")
             return
-            
+
         active_blocks = [b for b in blocks if b.is_active]
         completed_blocks = [b for b in blocks if not b.is_active and not b.is_gap]
-        
+
         print_themed("📊 Session Summary", style="header")
         print_themed(f"Active sessions: {len(active_blocks)}", style="info")
         print_themed(f"Completed sessions: {len(completed_blocks)}", style="value")
-        
+
         if active_blocks:
             for block in active_blocks:
                 total_tokens = self._calculate_total_tokens(block.per_model_stats)
                 print_themed(f"  • Session {block.id}: {total_tokens:,} tokens", style="usage.total")
-                
+
     def print_costs(self, blocks: List[SessionBlock]) -> None:
         """Print themed cost breakdown."""
         total_cost = 0
@@ -49,14 +49,14 @@ class JSONFormatter:
             if not block.is_gap:
                 per_model_costs = self.pricing_fetcher.recalculate_per_model_costs(block.per_model_stats)
                 total_cost += sum(per_model_costs.values())
-        
+
         if total_cost > 10:
             style = "cost.high"
         elif total_cost > 1:
-            style = "cost.medium" 
+            style = "cost.medium"
         else:
             style = "cost.low"
-            
+
         print_themed(f"💰 Total Cost: ${total_cost:.4f}", style=style)
 
     def format_blocks(self, blocks: List[SessionBlock]) -> str:
@@ -66,7 +66,6 @@ class JSONFormatter:
         }
         return json.dumps(output, indent=2, default=str)
 
-    from typing import Dict, Any
 
     def _calculate_total_tokens(
             self,
@@ -152,7 +151,7 @@ class JSONFormatter:
     def _format_per_model_stats(self, per_model_stats: Dict[str, Dict[str, Any]], per_model_costs: Dict[str, float]) -> Dict[str, Any]:
         """Format per-model statistics with corrected costs."""
         formatted_stats = {}
-        
+
         for model, stats in per_model_stats.items():
             formatted_stats[model] = {
                 "tokenCounts": {
@@ -165,7 +164,7 @@ class JSONFormatter:
                 "costUSD": per_model_costs.get(model, 0.0),
                 "entriesCount": stats.get('entries_count', 0)
             }
-        
+
         return formatted_stats
 
     def _format_timestamp(self, timestamp) -> str:
@@ -178,7 +177,7 @@ class JSONFormatter:
             utc_timestamp = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
         else:
             utc_timestamp = timestamp
-        
+
         # Format with milliseconds precision (.XXXZ)
         milliseconds = utc_timestamp.microsecond // 1000
         return utc_timestamp.strftime(f'%Y-%m-%dT%H:%M:%S.{milliseconds:03d}Z')

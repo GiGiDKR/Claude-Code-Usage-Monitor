@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Dict, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class CostMode(Enum):
@@ -36,7 +36,7 @@ class TokenCounts:
     output_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
-    
+
     @property
     def total_tokens(self) -> int:
         """Calculate total token count as sum of input and output tokens only
@@ -62,17 +62,17 @@ class SessionBlock:
     token_counts: TokenCounts = field(default_factory=TokenCounts)
     cost_usd: float = 0.0
     models: List[str] = field(default_factory=list)
-    
+
     # Per-model statistics tracking
     per_model_stats: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    
+
     # Burn rate tracking
     burn_rate_snapshot: Optional['BurnRate'] = None
     projection_data: Optional[Dict[str, Any]] = None
-    
+
     # Token limit tracking
     limit_messages: List[Dict[str, Any]] = field(default_factory=list)
-    
+
     @property
     def duration_minutes(self) -> float:
         """Calculate block duration in minutes."""

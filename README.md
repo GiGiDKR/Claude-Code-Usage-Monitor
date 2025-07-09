@@ -6,6 +6,9 @@
 
 A beautiful real-time terminal monitoring tool for Claude AI token usage. Track your token consumption, burn rate, and get predictions about when you'll run out of tokens.
 
+> [!IMPORTANT]
+> This fork introduces a **Language selection** for display and a **Compact Mode**
+
 ![Claude Token Monitor Screenshot](https://raw.githubusercontent.com/Maciek-roboblog/Claude-Code-Usage-Monitor/main/doc/sc.png)
 
 ---
@@ -20,7 +23,8 @@ A beautiful real-time terminal monitoring tool for Claude AI token usage. Track 
 - [📖 Usage](#-usage)
   - [Basic Usage](#basic-usage)
   - [Configuration Options](#configuration-options)
-    - [Compact Mode](#compact-mode)
+  - [Language Configuration](#language-configuration)
+  - [Compact Mode](#compact-mode)
   - [Available Plans](#available-plans)
 - [🙏 Please Help Test This Release!](#-please-help-test-this-release)
 - [✨ Features & How It Works](#-features--how-it-works)

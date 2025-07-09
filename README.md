@@ -218,23 +218,21 @@ claude-monitor --timezone Europe/London
 
 #### Language Configuration
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/GiGiDKR/Claude-Code-Usage-Monitor/main/doc/i18n.png">
+</p>
+
 Configure your preferred language for the interface:
 
 ```bash
 # French interface
 claude-monitor --language fr
-
-# English interface  
-claude-monitor --language en
-
-# Spanish interface
-claude-monitor --language es
-
-# German interface
-claude-monitor --language de
+claude-monitor -l fr
 
 # Auto-detect from system (default)
 claude-monitor --language auto
+
+# Available languages: en, fr, es, de, auto
 
 # Combined with other options
 claude-monitor --plan max5 --language fr --timezone Europe/Paris

@@ -81,5 +81,4 @@ class BurnRateCalculator:
             projected_total_tokens=int(projected_total_tokens),
             projected_total_cost=projected_total_cost,
             remaining_minutes=int(remaining_minutes)
-            remaining_minutes=int(remaining_minutes),
         )

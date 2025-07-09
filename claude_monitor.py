@@ -467,11 +467,7 @@ def create_no_session_compact_line(token_limit, timezone_str):
     display_tz = get_display_timezone(timezone_str)
     current_time_display = now.astimezone(display_tz)
     current_time_str = current_time_display.strftime("%H:%M:%S")
-    compact_line = (
-        f"Claude : 0/{token_limit:,} (0.0%) | 🔥0.0/min | "
-        f"No active session | {current_time_str}"
-    )
-    return compact_line
+    return f"Claude : 0/{token_limit:,} (0.0%) | 🔥0.0/min | No active session | {current_time_str}"
 
 
 def display_error_screen(error_message="Failed to get usage data"):

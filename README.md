@@ -20,6 +20,7 @@ A beautiful real-time terminal monitoring tool for Claude AI token usage. Track 
 - [📖 Usage](#-usage)
   - [Basic Usage](#basic-usage)
   - [Configuration Options](#configuration-options)
+    - [Compact Mode](#compact-mode)
   - [Available Plans](#available-plans)
 - [🙏 Please Help Test This Release!](#-please-help-test-this-release)
 - [✨ Features & How It Works](#-features--how-it-works)
@@ -53,6 +54,7 @@ A beautiful real-time terminal monitoring tool for Claude AI token usage. Track 
 - **💼 Professional UI** - Clean, colorful terminal interface with emojis
 - **🎨 Smart Theming** - Automatic light/dark theme detection with manual override options
 - **⏰ Customizable scheduling** - Set your own reset times and timezones
+- **📱 Compact mode** - Single-line display perfect for tmux and narrow terminals
 - **🌍 Multilingual Support** - Available in English, French, Spanish and German with automatic locale detection
 
 
@@ -157,6 +159,9 @@ claude-usage-monitor
 ```bash
 # Default (Pro plan - 7,000 tokens)
 claude-usage-monitor
+
+# Compact mode for narrow terminals/tmux
+claude-usage-monitor --compact
 
 # Exit the monitor
 # Press Ctrl+C to gracefully exit
@@ -265,6 +270,36 @@ claude-monitor --theme auto
 # Debug theme detection
 claude-monitor --theme-debug
 ```
+
+#### Compact Mode
+
+For narrow terminals, tmux integration, or when you need minimal screen space:
+
+```bash
+# Enable compact single-line display mode
+claude-monitor --compact
+claude-monitor -c
+
+# Combine with other options
+claude-monitor --compact --plan max20
+claude-monitor -c --reset-hour 9 --timezone US/Eastern
+```
+
+**Compact Mode Features:**
+- **Single-line display**: Shows all essential information in one line
+- **Format**: `Claude : 9.2K/35K (26.3%) | 🔥51.9/min | End: 02:13 | Reset: 18:00 | 17:57:08`
+- **Perfect for tmux**: Integrates seamlessly with tmux status bars
+- **Narrow terminal friendly**: Works well in terminals with limited width
+- **Real-time updates**: Updates every 3 seconds like the full interface
+- **Critical notifications**: Important warnings still appear below the compact line
+
+**Use Cases:**
+- **tmux integration**: Perfect for tmux status windows
+- **Terminal multiplexers**: Works well with screen, byobu, etc.
+- **Narrow terminals**: Ideal for split-screen development
+- **Background monitoring**: Minimal distraction while coding
+- **SSH sessions**: Reduced bandwidth usage for remote monitoring
+
 
 ### Available Plans
 
@@ -483,6 +518,30 @@ claude-monitor
 # Press Ctrl+C after checking status
 ```
 
+#### 📱 Compact Mode Usage
+**Scenario**: You need minimal screen space or want to integrate with tmux.
+
+```bash
+# Basic compact mode
+claude-monitor --compact
+
+# Compact mode with specific plan
+claude-monitor --compact --plan max20
+
+# Perfect for tmux integration
+tmux new-window -n claude 'claude-monitor --compact --plan max5'
+
+# Background monitoring in split terminal
+claude-monitor -c --timezone US/Eastern --reset-hour 9
+```
+
+**Benefits**:
+- Single-line display saves valuable screen space
+- Shows all essential information: tokens, burn rate, predictions
+- Perfect for terminal multiplexers (tmux, screen, byobu)
+- Less distracting for background monitoring
+- Works well with SSH sessions and narrow terminals
+
 ### Plan Selection Strategies
 
 #### How to Choose Your Plan
@@ -588,7 +647,22 @@ claude-monitor --plan custom_max
    tmux attach -t claude-monitor
    ```
 
-3. **Multi-Session Strategy**
+3. **Compact Mode Integration**
+   ```bash
+   # Perfect for tmux status windows
+   tmux new-session -d -s claude-compact 'claude-monitor --compact'
+   
+   # Combine with other options for optimal setup
+   tmux new-session -d -s claude-compact 'claude-monitor --compact --plan max20 --timezone US/Eastern'
+   
+   # For narrow terminal splits
+   claude-monitor --compact --plan max5
+   
+   # Background monitoring while coding
+   claude-monitor -c --reset-hour 9
+   ```
+
+4. **Multi-Session Strategy**
    - Remember sessions last exactly 5 hours
    - You can have multiple overlapping sessions
    - Plan work across session boundaries

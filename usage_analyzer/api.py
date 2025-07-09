@@ -41,12 +41,13 @@ def analyze_usage():
                     block.projection_data = {
                         "totalTokens": projection.projected_total_tokens,
                         "totalCost": projection.projected_total_cost,
-                        "remainingMinutes": projection.remaining_minutes
+                        "remainingMinutes": projection.remaining_minutes,
                     }
 
     json_output = formatter.format_blocks(blocks)
-#
+
     return json.loads(json_output)
 
 
-print(json.dumps(analyze_usage(), indent=2, ensure_ascii=False))
+if __name__ == "__main__":
+    print(json.dumps(analyze_usage(), indent=2, ensure_ascii=False))

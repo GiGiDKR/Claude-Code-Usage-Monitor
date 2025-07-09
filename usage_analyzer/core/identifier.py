@@ -102,6 +102,7 @@ class SessionBlockIdentifier:
         block.entries.append(entry)
 
         # Get model name (use 'unknown' if missing)
+        model = entry.model or 'unknown'
         model = entry.model or "unknown"
 
         # Initialize per-model stats if not exists
@@ -117,6 +118,12 @@ class SessionBlockIdentifier:
 
         # Update per-model stats
         model_stats = block.per_model_stats[model]
+        model_stats['input_tokens'] += entry.input_tokens
+        model_stats['output_tokens'] += entry.output_tokens
+        model_stats['cache_creation_tokens'] += entry.cache_creation_tokens
+        model_stats['cache_read_tokens'] += entry.cache_read_tokens
+        model_stats['cost_usd'] += entry.cost_usd or 0.0
+        model_stats['entries_count'] += 1
         model_stats["input_tokens"] += entry.input_tokens
         model_stats["output_tokens"] += entry.output_tokens
         model_stats["cache_creation_tokens"] += entry.cache_creation_tokens

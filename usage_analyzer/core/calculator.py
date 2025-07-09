@@ -23,7 +23,9 @@ class BurnRateCalculator:
             return None
 
         # Use only input + output tokens for burn rate calculation
-        total_tokens = block.token_counts.input_tokens + block.token_counts.output_tokens
+        total_tokens = (
+            block.token_counts.input_tokens + block.token_counts.output_tokens
+        )
         if total_tokens == 0:
             return None
 
@@ -34,6 +36,16 @@ class BurnRateCalculator:
         return BurnRate(
             tokens_per_minute=tokens_per_minute,
             cost_per_hour=cost_per_hour
+        )
+
+        cost_per_hour = (
+            (block.cost_usd / block.duration_minutes) * 60
+            if block.duration_minutes > 0
+            else 0
+        )
+
+        return BurnRate(
+            tokens_per_minute=tokens_per_minute, cost_per_hour=cost_per_hour
         )
 
     def project_block_usage(self, block: SessionBlock) -> Optional[UsageProjection]:
@@ -53,7 +65,9 @@ class BurnRateCalculator:
         remaining_hours = remaining_minutes / 60
 
         # Current usage (input + output tokens only)
-        current_tokens = block.token_counts.input_tokens + block.token_counts.output_tokens
+        current_tokens = (
+            block.token_counts.input_tokens + block.token_counts.output_tokens
+        )
         current_cost = block.cost_usd
 
         # Projected usage
@@ -67,4 +81,5 @@ class BurnRateCalculator:
             projected_total_tokens=int(projected_total_tokens),
             projected_total_cost=projected_total_cost,
             remaining_minutes=int(remaining_minutes)
+            remaining_minutes=int(remaining_minutes),
         )

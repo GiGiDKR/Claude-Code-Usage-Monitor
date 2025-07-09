@@ -140,11 +140,11 @@ class ThemeDetector:
             import tty
 
             # Save current terminal settings
-            old_settings = termios.tcgetattr(sys.stdout.fileno())
+            old_settings = termios.tcgetattr(sys.stdin)
 
             try:
                 # Set terminal to raw mode
-                tty.setraw(sys.stdout.fileno())
+                tty.setraw(sys.stdin.fileno())
 
                 # Send OSC 11 query (query background color)
                 sys.stdout.write("\033]11;?\033\\")
@@ -192,8 +192,12 @@ class ThemeDetector:
                 # Restore terminal settings
                 termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
-        except (ImportError, OSError, AttributeError):
+        except (ImportError, OSError):
             # termios not available or operation failed
+            pass
+        except Exception:
+            # Fallback for any other exception
+            pass
             pass
 
         return None

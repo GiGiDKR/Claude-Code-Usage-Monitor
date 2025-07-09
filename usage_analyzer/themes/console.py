@@ -48,17 +48,64 @@ def get_themed_console(force_theme: Optional[ThemeType] = None) -> Console:
     return _console
 
 
-def print_themed(*args, style: Optional[str] = None, end: str = "\n", **kwargs) -> None:
-    """Themed print function using Rich console.
+def print_themed(
+    message_key: Optional[str] = None,
+    message: Optional[str] = None,
+    style: Optional[str] = None,
+    end: str = "\n",
+    **format_kwargs,
+) -> None:
+    """Themed print function with i18n support using Rich console.
 
     Args:
-        *args: Arguments to print
+        message_key: Clé de traduction i18n (ex: "error.data_fetch_failed")
+        message: Message direct (pour compatibilité descendante)
         style: Rich style to apply
         end: String appended after the last value
-        **kwargs: Additional keyword arguments for Rich print
+        **format_kwargs: Variables pour formatage de la chaîne traduite
+
+    Examples:
+        # Mode i18n avec traduction
+        print_themed(message_key="error.data_fetch_failed", style="error")
+
+        # Mode i18n avec variables
+        print_themed(
+            message_key="notification.limit_exceeded",
+            style="warning",
+            plan="PRO",
+            limit="100,000"
+        )
+
+        # Mode legacy (compatibilité descendante)
+        print_themed(message="Hello world", style="info")
     """
     console = get_themed_console()
-    console.print(*args, style=style, end=end, **kwargs)
+
+    # Déterminer le texte à afficher
+    if message_key:
+        # Mode i18n : traduction + formatage
+        try:
+            from ..i18n import _
+
+            translated = _(message_key)
+
+            if format_kwargs:
+                formatted_text = translated.format(**format_kwargs)
+            else:
+                formatted_text = translated
+
+        except (ImportError, KeyError) as e:
+            # Fallback en cas d'erreur i18n
+            formatted_text = f"[i18n error: {message_key}]"
+            console.print(
+                f"Warning: Translation failed for '{message_key}': {e}", style="dim red"
+            )
+    else:
+        # Mode legacy : message direct
+        formatted_text = message or ""
+
+    # Affichage avec style Rich
+    console.print(formatted_text, style=style, end=end)
 
 
 def get_current_theme() -> Optional[ThemeType]:

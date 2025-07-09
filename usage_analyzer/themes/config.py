@@ -42,6 +42,26 @@ class ThemeConfig:
         self._save_config(config)
         self._config_cache = None  # Clear cache
 
+    def get_user_language(self) -> Optional[str]:
+        """Get user's language preference from config.
+
+        Returns:
+            Language code (e.g., 'fr', 'en') or None if not configured
+        """
+        config = self._load_config()
+        return config.get("language")
+
+    def set_user_language(self, lang: str) -> None:
+        """Set user's language preference in config.
+
+        Args:
+            lang: Language code to set (e.g., 'fr', 'en')
+        """
+        config = self._load_config()
+        config["language"] = lang
+        self._save_config(config)
+        self._config_cache = None  # Clear cache
+
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file.
 
@@ -101,12 +121,11 @@ class ThemeConfig:
         Returns:
             Debug information dictionary
         """
+        theme_pref = self.get_user_theme_preference()
         return {
             "config_dir": str(self.config_dir),
             "config_file": str(self.config_file),
             "config_exists": self.config_file.exists(),
-            "user_preference": self.get_user_theme_preference().value
-            if self.get_user_theme_preference()
-            else None,
+            "user_preference": theme_pref.value if theme_pref else None,
             "config_content": self._load_config(),
         }

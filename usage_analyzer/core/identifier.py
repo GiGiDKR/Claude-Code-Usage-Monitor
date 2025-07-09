@@ -28,7 +28,9 @@ class SessionBlockIdentifier:
 
         for entry in entries:
             # Check if we need a new block
-            if current_block is None or self._should_create_new_block(current_block, entry):
+            if current_block is None or self._should_create_new_block(
+                current_block, entry
+            ):
                 # Close current block
                 if current_block:
                     self._finalize_block(current_block)
@@ -62,7 +64,10 @@ class SessionBlockIdentifier:
             return True
 
         # Inactivity gap detected
-        if block.entries and (entry.timestamp - block.entries[-1].timestamp) >= self.session_duration:
+        if (
+            block.entries
+            and (entry.timestamp - block.entries[-1].timestamp) >= self.session_duration
+        ):
             return True
 
         return False
@@ -89,7 +94,7 @@ class SessionBlockIdentifier:
             entries=[],
             token_counts=TokenCounts(),
             cost_usd=0.0,
-            models=[]
+            models=[],
         )
 
     def _add_entry_to_block(self, block: SessionBlock, entry: UsageEntry):
@@ -98,16 +103,17 @@ class SessionBlockIdentifier:
 
         # Get model name (use 'unknown' if missing)
         model = entry.model or 'unknown'
+        model = entry.model or "unknown"
 
         # Initialize per-model stats if not exists
         if model not in block.per_model_stats:
             block.per_model_stats[model] = {
-                'input_tokens': 0,
-                'output_tokens': 0,
-                'cache_creation_tokens': 0,
-                'cache_read_tokens': 0,
-                'cost_usd': 0.0,
-                'entries_count': 0
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation_tokens": 0,
+                "cache_read_tokens": 0,
+                "cost_usd": 0.0,
+                "entries_count": 0,
             }
 
         # Update per-model stats
@@ -118,6 +124,12 @@ class SessionBlockIdentifier:
         model_stats['cache_read_tokens'] += entry.cache_read_tokens
         model_stats['cost_usd'] += entry.cost_usd or 0.0
         model_stats['entries_count'] += 1
+        model_stats["input_tokens"] += entry.input_tokens
+        model_stats["output_tokens"] += entry.output_tokens
+        model_stats["cache_creation_tokens"] += entry.cache_creation_tokens
+        model_stats["cache_read_tokens"] += entry.cache_read_tokens
+        model_stats["cost_usd"] += entry.cost_usd or 0.0
+        model_stats["entries_count"] += 1
 
         # Update aggregated token counts (sum across all models)
         block.token_counts.input_tokens += entry.input_tokens
@@ -138,7 +150,9 @@ class SessionBlockIdentifier:
         if block.entries:
             block.actual_end_time = block.entries[-1].timestamp
 
-    def _check_for_gap(self, last_block: SessionBlock, next_entry: UsageEntry) -> Optional[SessionBlock]:
+    def _check_for_gap(
+        self, last_block: SessionBlock, next_entry: UsageEntry
+    ) -> Optional[SessionBlock]:
         """Check for inactivity gap between blocks."""
         if not last_block.actual_end_time:
             return None
@@ -158,7 +172,7 @@ class SessionBlockIdentifier:
                 entries=[],
                 token_counts=TokenCounts(),
                 cost_usd=0.0,
-                models=[]
+                models=[],
             )
 
         return None

@@ -22,7 +22,9 @@ class DataLoader:
         if data_path is None:
             # Auto-discover
             paths = discover_claude_data_paths()
-            self.data_path = paths[0] if paths else Path("~/.claude/projects").expanduser()
+            self.data_path = (
+                paths[0] if paths else Path("~/.claude/projects").expanduser()
+            )
         else:
             self.data_path = Path(data_path).expanduser()
 
@@ -41,7 +43,6 @@ class DataLoader:
         processed_hashes = set()
 
         # Track overall statistics
-        total_files = len(jsonl_files)
         total_processed = 0
 
         # Process each file
@@ -63,16 +64,17 @@ class DataLoader:
 
         return list(self.data_path.rglob("*.jsonl"))
 
-    def _parse_jsonl_file(self, file_path: Path, processed_hashes: set, mode: CostMode) -> List[UsageEntry]:
+    def _parse_jsonl_file(
+        self, file_path: Path, processed_hashes: set, mode: CostMode
+    ) -> List[UsageEntry]:
         """Parse a single JSONL file with deduplication."""
         entries = []
         total_lines = 0
         skipped_duplicates = 0
-        skipped_synthetic = 0
         skipped_invalid = 0
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -123,12 +125,14 @@ class DataLoader:
         # Try to get message ID from different possible locations
         message_id = None
         request_id = data.get('requestId') or data.get('request_id')
+        request_id = data.get("requestId") or data.get("request_id")
 
         # Check different message structures
-        if 'message' in data and isinstance(data['message'], dict):
-            message_id = data['message'].get('id')
+        if "message" in data and isinstance(data["message"], dict):
+            message_id = data["message"].get("id")
         else:
             message_id = data.get('message_id')
+            message_id = data.get("message_id")
 
         if message_id is None or request_id is None:
             return None
@@ -136,16 +140,19 @@ class DataLoader:
         # Create a hash using simple concatenation
         return f"{message_id}:{request_id}"
 
-    def _convert_to_usage_entry(self, data: dict, mode: CostMode) -> Optional[UsageEntry]:
+    def _convert_to_usage_entry(
+        self, data: dict, mode: CostMode
+    ) -> Optional[UsageEntry]:
         """Convert raw data to UsageEntry with proper cost calculation based on mode."""
         try:
-            if 'timestamp' not in data:
+            if "timestamp" not in data:
                 return None
 
             timestamp = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
+            timestamp = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
 
             # Handle both nested and flat usage data
-            usage = data.get('usage', {})
+            usage = data.get("usage", {})
             if not usage:
                 # Try extracting from message structure
                 message = data.get('message', {})
@@ -156,15 +163,24 @@ class DataLoader:
             output_tokens = usage.get('output_tokens', 0) or 0
             cache_creation_tokens = usage.get('cache_creation_input_tokens', 0) or 0
             cache_read_tokens = usage.get('cache_read_input_tokens', 0) or 0
+            message = data.get("message", {})
+            usage = message.get("usage", {})
+
+            # Extract token counts
+            input_tokens = usage.get("input_tokens", 0) or 0
+            output_tokens = usage.get("output_tokens", 0) or 0
+            cache_creation_tokens = usage.get("cache_creation_input_tokens", 0) or 0
+            cache_read_tokens = usage.get("cache_read_input_tokens", 0) or 0
 
             # Create entry data for cost calculation
             entry_data = {
-                'model': data.get('model', '') or (data.get('message', {}).get('model', '')),
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cache_creation_tokens': cache_creation_tokens,
-                'cache_read_tokens': cache_read_tokens,
-                'costUSD': data.get('cost') or data.get('costUSD')
+                "model": data.get("model", "")
+                or (data.get("message", {}).get("model", "")),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_creation_tokens": cache_creation_tokens,
+                "cache_read_tokens": cache_read_tokens,
+                "costUSD": data.get("cost") or data.get("costUSD"),
             }
 
             # Calculate cost using the new cost calculation logic
@@ -177,9 +193,10 @@ class DataLoader:
                 cache_creation_tokens=cache_creation_tokens,
                 cache_read_tokens=cache_read_tokens,
                 cost_usd=cost_usd,
-                model=entry_data['model'],
-                message_id=data.get('message_id') or (data.get('message', {}).get('id')),
-                request_id=data.get('request_id')
+                model=entry_data["model"],
+                message_id=data.get("message_id")
+                or (data.get("message", {}).get("id")),
+                request_id=data.get("request_id"),
             )
         except Exception:
             return None

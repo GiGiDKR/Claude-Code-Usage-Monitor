@@ -278,7 +278,7 @@ def parse_args():
     )
     parser.add_argument(
         "--language",
-        "--lang",
+        "-l",
         type=str,
         choices=["fr", "en", "es", "de", "auto"],
         default="auto",

@@ -9,9 +9,9 @@ import pytz
 
 from usage_analyzer.api import analyze_usage
 from usage_analyzer.i18n import _, init_translations
+from usage_analyzer.output import CompactFormatter  # Ajout pour le mode compact
 from usage_analyzer.themes import ThemeType, get_themed_console, print_themed
 from usage_analyzer.themes.config import ThemeConfig
-from usage_analyzer.utils.alignment import get_status_formatter
 
 # All internal calculations use UTC, display timezone is configurable
 UTC_TZ = pytz.UTC
@@ -270,6 +270,12 @@ def parse_args():
         help="Interface language (fr=French, en=English, es=Spanish, "
         "de=German, auto=system detection)",
     )
+    parser.add_argument(
+        "--compact",
+        "-c",
+        action="store_true",
+        help="Compact single-line display mode for tmux integration",
+    )
     return parser.parse_args()
 
 
@@ -294,11 +300,10 @@ def setup_terminal():
     """Setup terminal for raw mode to prevent input interference."""
     if not HAS_TERMIOS or not sys.stdin.isatty():
         return None
-
     try:
-        # Save current terminal settings
+        import termios
+
         old_settings = termios.tcgetattr(sys.stdin)
-        # Set terminal to non-canonical mode (disable echo and line buffering)
         new_settings = termios.tcgetattr(sys.stdin)
         new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ICANON)
         termios.tcsetattr(sys.stdin, termios.TCSANOW, new_settings)
@@ -309,11 +314,11 @@ def setup_terminal():
 
 def restore_terminal(old_settings):
     """Restore terminal to original settings."""
-    # Show cursor and exit alternate screen buffer
     print("\033[?25h\033[?1049l", end="", flush=True)
-
     if old_settings and HAS_TERMIOS and sys.stdin.isatty():
         try:
+            import termios
+
             termios.tcsetattr(sys.stdin, termios.TCSANOW, old_settings)
         except Exception:
             pass
@@ -323,6 +328,8 @@ def flush_input():
     """Flush any pending input to prevent display corruption."""
     if HAS_TERMIOS and sys.stdin.isatty():
         try:
+            import termios
+
             termios.tcflush(sys.stdin, termios.TCIFLUSH)
         except Exception:
             pass
@@ -374,6 +381,10 @@ def determine_language(args):
 def main():
     """Main monitoring loop."""
     args = parse_args()
+
+    # Détermination et initialisation de la langue AVANT toute sortie
+    language = determine_language(args)
+    init_translations(language)
 
     # Handle theme setup
     if args.theme:
@@ -438,22 +449,174 @@ def main():
     else:
         token_limit = get_token_limit(args.plan)
 
+    # Initialisation du CompactFormatter si besoin
+    compact_formatter = None
+    if args.compact:
+        compact_formatter = CompactFormatter()
+
     try:
-        # Enter alternate screen buffer, clear and hide cursor
+        # Entrée dans l'alternate screen buffer, effacement et masquage du curseur
         print("\033[?1049h\033[2J\033[H\033[?25l", end="", flush=True)
 
-        # Show loading screen immediately
-        show_loading_screen()
+        if args.compact:
+            from usage_analyzer.i18n.message_keys import ERROR, STATUS
 
-        # Import message keys for main display
+            # Mode compact : affichage sur une seule ligne, traduction respectée
+            while True:
+                flush_input()
+                data = analyze_usage()
+                now = datetime.now(UTC_TZ)
+                try:
+                    display_tz = pytz.timezone(args.timezone)
+                except pytz.exceptions.UnknownTimeZoneError:
+                    display_tz = pytz.timezone("Europe/Warsaw")
+                current_time_display = now.astimezone(display_tz)
+                current_time_str = current_time_display.strftime("%H:%M:%S")
+
+                if not data or "blocks" not in data:
+                    error_msg = _(ERROR.DATA_FETCH_FAILED)
+                    compact_line = f"Claude : {error_msg} | {current_time_str}"
+                    console.clear()
+                    console.print(compact_line)
+                    stop_event.wait(timeout=3.0)
+                    continue
+
+                # Recherche du bloc actif
+                active_block = None
+                for block in data["blocks"]:
+                    if block.get("isActive", False):
+                        active_block = block
+                        break
+
+                if not active_block:
+                    no_session_msg = _(STATUS.NO_ACTIVE_SESSION)
+                    compact_line = f"Claude : 0/{token_limit:,} (0.0%) | 🔥0.0/min | {no_session_msg} | {current_time_str}"
+                    console.clear()
+                    console.print(compact_line)
+                    stop_event.wait(timeout=3.0)
+                    continue
+
+                tokens_used = active_block.get("totalTokens", 0)
+                original_limit = get_token_limit(args.plan)
+                if tokens_used > token_limit and args.plan != "custom_max":
+                    token_limit = get_token_limit("custom_max", data["blocks"])
+                tokens_left = max(0, token_limit - tokens_used)
+                usage_percentage = (
+                    (tokens_used / token_limit * 100) if token_limit else 0
+                )
+
+                # Burn rate
+                burn_rate = calculate_hourly_burn_rate(data["blocks"], now)
+
+                # Heures de reset et de fin prédite
+                start_time_str = active_block.get("startTime")
+                if start_time_str:
+                    start_time = datetime.fromisoformat(
+                        start_time_str.replace("Z", "+00:00")
+                    )
+                    if start_time.tzinfo is None:
+                        start_time = UTC_TZ.localize(start_time)
+                    else:
+                        start_time = start_time.astimezone(UTC_TZ)
+                else:
+                    start_time = now
+                end_time_str = active_block.get("endTime")
+                if end_time_str:
+                    reset_time = datetime.fromisoformat(
+                        end_time_str.replace("Z", "+00:00")
+                    )
+                    if reset_time.tzinfo is None:
+                        reset_time = UTC_TZ.localize(reset_time)
+                    else:
+                        reset_time = reset_time.astimezone(UTC_TZ)
+                else:
+                    reset_time = start_time + timedelta(hours=5)
+                # S'assurer que reset_time et start_time sont bien des datetime
+                if not isinstance(reset_time, datetime):
+                    reset_time = now + timedelta(hours=5)
+                if not isinstance(start_time, datetime):
+                    start_time = now
+                time_to_reset = reset_time - now
+                minutes_to_reset = time_to_reset.total_seconds() / 60
+
+                # Prédiction d'épuisement
+                if burn_rate > 0 and tokens_left > 0:
+                    minutes_to_depletion = tokens_left / burn_rate
+                    predicted_end_time = now + timedelta(minutes=minutes_to_depletion)
+                else:
+                    predicted_end_time = reset_time
+                # S'assurer que predicted_end_time est un datetime
+                if not isinstance(predicted_end_time, datetime):
+                    predicted_end_time = (
+                        reset_time
+                        if isinstance(reset_time, datetime)
+                        else now + timedelta(hours=5)
+                    )
+
+                # Affichage compact formaté et traduit
+                predicted_end_local = (
+                    predicted_end_time.astimezone(display_tz)
+                    if isinstance(predicted_end_time, datetime)
+                    else now.astimezone(display_tz)
+                )
+                reset_time_local = (
+                    reset_time.astimezone(display_tz)
+                    if isinstance(reset_time, datetime)
+                    else now.astimezone(display_tz)
+                )
+                predicted_end_str = predicted_end_local.strftime("%H:%M")
+                reset_time_str = reset_time_local.strftime("%H:%M")
+                if compact_formatter:
+                    compact_line = compact_formatter.format(
+                        tokens_used,
+                        token_limit,
+                        usage_percentage,
+                        burn_rate,
+                        predicted_end_str,
+                        reset_time_str,
+                        current_time_str,
+                        tokens_left,
+                        language=language,
+                    )
+                else:
+                    compact_line = f"Claude : {tokens_used}/{token_limit} ({usage_percentage:.1f}%) | 🔥{burn_rate:.1f}/min | End: {predicted_end_str} | Reset: {reset_time_str} | {current_time_str}"
+                console.clear()
+                console.print(compact_line)
+                # Affichage des notifications critiques si besoin
+                show_exceed_notification = update_notification_state(
+                    "exceed_max_limit", tokens_used > token_limit, now
+                )
+                show_tokens_will_run_out = update_notification_state(
+                    "tokens_will_run_out",
+                    isinstance(predicted_end_time, datetime)
+                    and isinstance(reset_time, datetime)
+                    and predicted_end_time < reset_time,
+                    now,
+                )
+                if show_exceed_notification:
+                    from usage_analyzer.i18n.message_keys import NOTIFICATION
+
+                    console.print(
+                        f"🚨 [error]{_(NOTIFICATION.TOKENS_EXCEEDED_MAX)} ({tokens_used:,} > {token_limit:,})[/]"
+                    )
+                if show_tokens_will_run_out:
+                    from usage_analyzer.i18n.message_keys import NOTIFICATION
+
+                    console.print(f"⚠️  [error]{_(NOTIFICATION.TOKENS_EXHAUSTED)}[/]")
+                stop_event.wait(timeout=3.0)
+            return  # Sortie du mode compact
+
+        # Mode plein (affichage complet)
         from usage_analyzer.i18n.message_keys import ERROR, STATUS, UI
+        from usage_analyzer.utils.alignment import get_status_formatter
 
-        # Create aligned formatter for consistent spacing across languages
         formatter = get_status_formatter()
-
         while True:
             # Flush any pending input to prevent display corruption
             flush_input()
+
+            # Always use UTC for internal calculations
+            current_time = datetime.now(UTC_TZ)
 
             # Build complete screen in buffer
             screen_buffer = []
@@ -557,6 +720,8 @@ def main():
                     start_time = UTC_TZ.localize(start_time)
                 else:
                     start_time = start_time.astimezone(UTC_TZ)
+            else:
+                start_time = current_time
 
             # Extract endTime from active block (comes in UTC from usage_analyzer)
             end_time_str = active_block.get("endTime")
@@ -571,9 +736,15 @@ def main():
                 # Fallback: if no endTime, estimate 5 hours from startTime
                 reset_time = (
                     start_time + timedelta(hours=5)
-                    if start_time_str
-                    else datetime.now(UTC_TZ) + timedelta(hours=5)
+                    if isinstance(start_time, datetime)
+                    else current_time + timedelta(hours=5)
                 )
+
+            # Toujours s'assurer que start_time et reset_time sont des datetime
+            if not isinstance(start_time, datetime):
+                start_time = current_time
+            if not isinstance(reset_time, datetime):
+                reset_time = current_time + timedelta(hours=5)
 
             # Always use UTC for internal calculations
             current_time = datetime.now(UTC_TZ)
@@ -594,6 +765,13 @@ def main():
             else:
                 # If no burn rate or tokens already depleted, use reset time
                 predicted_end_time = reset_time
+            # S'assurer que predicted_end_time est un datetime
+            if not isinstance(predicted_end_time, datetime):
+                predicted_end_time = (
+                    reset_time
+                    if isinstance(reset_time, datetime)
+                    else current_time + timedelta(hours=5)
+                )
 
             # Display header
             screen_buffer.extend(print_header())
@@ -606,7 +784,12 @@ def main():
             screen_buffer.append("")
 
             # Time to Reset section - calculate progress based on actual session duration
-            if start_time_str and end_time_str:
+            if (
+                start_time_str
+                and end_time_str
+                and isinstance(start_time, datetime)
+                and isinstance(reset_time, datetime)
+            ):
                 # Calculate actual session duration and elapsed time
                 total_session_minutes = (reset_time - start_time).total_seconds() / 60
                 elapsed_session_minutes = (
@@ -651,8 +834,16 @@ def main():
                 local_tz = pytz.timezone(args.timezone)
             except pytz.exceptions.UnknownTimeZoneError:
                 local_tz = pytz.timezone("Europe/Warsaw")
-            predicted_end_local = predicted_end_time.astimezone(local_tz)
-            reset_time_local = reset_time.astimezone(local_tz)
+            predicted_end_local = (
+                predicted_end_time.astimezone(local_tz)
+                if isinstance(predicted_end_time, datetime)
+                else current_time.astimezone(local_tz)
+            )
+            reset_time_local = (
+                reset_time.astimezone(local_tz)
+                if isinstance(reset_time, datetime)
+                else current_time.astimezone(local_tz)
+            )
 
             predicted_end_str = predicted_end_local.strftime("%H:%M")
             reset_time_str = reset_time_local.strftime("%H:%M")
@@ -672,7 +863,11 @@ def main():
                 "exceed_max_limit", tokens_used > token_limit, current_time
             )
             show_tokens_will_run_out = update_notification_state(
-                "tokens_will_run_out", predicted_end_time < reset_time, current_time
+                "tokens_will_run_out",
+                isinstance(predicted_end_time, datetime)
+                and isinstance(reset_time, datetime)
+                and predicted_end_time < reset_time,
+                current_time,
             )
 
             # Display persistent notifications
@@ -731,12 +926,7 @@ def main():
 
 
 if __name__ == "__main__":
-    # Parse arguments first
     args = parse_args()
-
-    # Determine and initialize language
     language = determine_language(args)
     init_translations(language)
-
-    # Run main function
     main()

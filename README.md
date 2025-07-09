@@ -285,6 +285,8 @@ claude-monitor --compact --plan max20
 claude-monitor -c --reset-hour 9 --timezone US/Eastern
 ```
 
+![Claude Monitor Compact Mode Screenshot](https://raw.githubusercontent.com/GiGiDKR/Claude-Code-Usage-Monitor/main/doc/cm.png)
+
 **Compact Mode Features:**
 - **Single-line display**: Shows all essential information in one line
 - **Format**: `Claude : 9.2K/35K (26.3%) | 🔥51.9/min | End: 02:13 | Reset: 18:00 | 17:57:08`

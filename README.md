@@ -273,6 +273,10 @@ claude-monitor --theme-debug
 
 #### Compact Mode
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/GiGiDKR/Claude-Code-Usage-Monitor/main/doc/cm.png">
+</p>
+
 For narrow terminals, tmux integration, or when you need minimal screen space:
 
 ```bash
@@ -284,8 +288,6 @@ claude-monitor -c
 claude-monitor --compact --plan max20
 claude-monitor -c --reset-hour 9 --timezone US/Eastern
 ```
-
-![Claude Monitor Compact Mode Screenshot](https://raw.githubusercontent.com/GiGiDKR/Claude-Code-Usage-Monitor/main/doc/cm.png)
 
 **Compact Mode Features:**
 - **Single-line display**: Shows all essential information in one line

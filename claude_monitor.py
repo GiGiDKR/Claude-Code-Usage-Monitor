@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import pytz
 
 from usage_analyzer.api import analyze_usage
+from usage_analyzer.output import CompactFormatter
+from usage_analyzer.themes import ThemeType, get_themed_console, print_themed
 from usage_analyzer.i18n import _, init_translations
 from usage_analyzer.themes import ThemeType, get_themed_console, print_themed
 from usage_analyzer.themes.config import ThemeConfig
@@ -15,6 +17,7 @@ from usage_analyzer.utils.alignment import get_status_formatter
 
 # All internal calculations use UTC, display timezone is configurable
 UTC_TZ = pytz.UTC
+DEFAULT_TIMEZONE = "Europe/Warsaw"
 
 # Notification persistence configuration
 NOTIFICATION_MIN_DURATION = 5  # seconds - minimum time to display notifications
@@ -25,6 +28,14 @@ notification_states = {
     "exceed_max_limit": {"triggered": False, "timestamp": None},
     "tokens_will_run_out": {"triggered": False, "timestamp": None},
 }
+
+
+def get_display_timezone(timezone_str):
+    """Get a timezone object, falling back to default if invalid."""
+    try:
+        return pytz.timezone(timezone_str)
+    except pytz.exceptions.UnknownTimeZoneError:
+        return pytz.timezone(DEFAULT_TIMEZONE)
 
 
 def update_notification_state(notification_type, condition_met, current_time):
@@ -262,6 +273,12 @@ def parse_args():
         help="Show theme detection debug information and exit",
     )
     parser.add_argument(
+        "--compact",
+        "-c",
+        action="store_true",
+        help="Compact single-line display mode for tmux integration",
+    )
+    parser.add_argument(
         "--language",
         "--lang",
         type=str,
@@ -328,6 +345,459 @@ def flush_input():
             pass
 
 
+def fetch_and_validate_data():
+    """Fetch usage data and validate it's available."""
+    data = analyze_usage()
+    if not data or "blocks" not in data:
+        return None
+    return data
+
+
+def find_active_block(blocks):
+    """Find the active block from a list of blocks."""
+    for block in blocks:
+        if block.get("isActive", False):
+            return block
+    return None
+
+
+def process_token_data(active_block, args, blocks, token_limit):
+    """Process token data and handle limit checking/switching."""
+    tokens_used = active_block.get("totalTokens", 0)
+    original_limit = get_token_limit(args.plan)
+
+    # Check if tokens exceed limit and switch to custom_max if needed
+    if tokens_used > token_limit and args.plan != "custom_max":
+        token_limit = get_token_limit("custom_max", blocks)
+
+    tokens_left = max(0, token_limit - tokens_used)
+    usage_percentage = (tokens_used / token_limit * 100) if token_limit else 0
+
+    return {
+        "tokens_used": tokens_used,
+        "token_limit": token_limit,
+        "original_limit": original_limit,
+        "tokens_left": tokens_left,
+        "usage_percentage": usage_percentage,
+    }
+
+
+def process_time_data(active_block, current_time):
+    """Process time-related data from active block."""
+    # Extract startTime from active block
+    start_time_str = active_block.get("startTime")
+    if start_time_str:
+        start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+        if start_time.tzinfo is None:
+            start_time = UTC_TZ.localize(start_time)
+        else:
+            start_time = start_time.astimezone(UTC_TZ)
+    else:
+        start_time = current_time
+
+    # Extract endTime from active block
+    end_time_str = active_block.get("endTime")
+    if end_time_str:
+        reset_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+        if reset_time.tzinfo is None:
+            reset_time = UTC_TZ.localize(reset_time)
+        else:
+            reset_time = reset_time.astimezone(UTC_TZ)
+    else:
+        # Fallback: if no endTime, estimate 5 hours from startTime
+        reset_time = start_time + timedelta(hours=5)
+
+    return {"start_time": start_time, "reset_time": reset_time}
+
+
+def calculate_predictions(
+    current_time, reset_time, burn_rate, tokens_left, timezone_str
+):
+    """Calculate predicted end time and format times for display."""
+    # Predicted end calculation
+    if burn_rate > 0 and tokens_left > 0:
+        minutes_to_depletion = tokens_left / burn_rate
+        predicted_end_time = current_time + timedelta(minutes=minutes_to_depletion)
+    else:
+        predicted_end_time = reset_time
+
+    # Convert to configured timezone for display
+    local_tz = get_display_timezone(timezone_str)
+    predicted_end_local = predicted_end_time.astimezone(local_tz)
+    reset_time_local = reset_time.astimezone(local_tz)
+
+    predicted_end_str = predicted_end_local.strftime("%H:%M")
+    reset_time_str = reset_time_local.strftime("%H:%M")
+
+    return {
+        "predicted_end_time": predicted_end_time,
+        "predicted_end_str": predicted_end_str,
+        "reset_time_str": reset_time_str,
+    }
+
+
+def handle_notifications(
+    token_data, predicted_end_time, reset_time, current_time, args
+):
+    """Handle notification state updates and return which notifications to show."""
+    show_switch_notification = update_notification_state(
+        "switch_to_custom",
+        token_data["token_limit"] > token_data["original_limit"],
+        current_time,
+    )
+    show_exceed_notification = update_notification_state(
+        "exceed_max_limit",
+        token_data["tokens_used"] > token_data["token_limit"],
+        current_time,
+    )
+    show_tokens_will_run_out = update_notification_state(
+        "tokens_will_run_out", predicted_end_time < reset_time, current_time
+    )
+
+    return {
+        "show_switch": show_switch_notification,
+        "show_exceed": show_exceed_notification,
+        "show_will_run_out": show_tokens_will_run_out,
+    }
+
+
+def create_no_session_compact_line(token_limit, timezone_str):
+    """Create compact line for when there's no active session."""
+    now = datetime.now(UTC_TZ)
+    display_tz = get_display_timezone(timezone_str)
+    current_time_display = now.astimezone(display_tz)
+    current_time_str = current_time_display.strftime("%H:%M:%S")
+    return f"Claude : 0/{token_limit:,} (0.0%) | 🔥0.0/min | No active session | {current_time_str}"
+
+
+def display_error_screen(error_message="Failed to get usage data"):
+    """Display error screen with header and error message."""
+    screen_buffer = []
+    screen_buffer.append("\033[H")  # Home position
+    screen_buffer.extend(print_header())
+    screen_buffer.append(f"[error]{error_message}[/]")
+    screen_buffer.append("")
+    screen_buffer.append("[warning]Possible causes:[/]")
+    screen_buffer.append("  • You're not logged into Claude")
+    screen_buffer.append("  • Network connection issues")
+    screen_buffer.append("")
+    screen_buffer.append("[dim]Retrying in 3 seconds... (Ctrl+C to exit)[/]")
+
+    console = get_themed_console()
+    console.clear()
+    for line in screen_buffer[1:]:  # Skip position control
+        console.print(line)
+
+
+def run_compact_mode(args, token_limit, compact_formatter, stop_event):
+    """Handle compact mode monitoring loop."""
+    while True:
+        # Flush any pending input to prevent display corruption
+        flush_input()
+
+        # Build screen buffer for compact mode
+        screen_buffer = []
+        screen_buffer.append("\033[H")  # Home position
+
+        data = fetch_and_validate_data()
+        if not data:
+            compact_line = (
+                f"Claude : Error fetching data | {datetime.now().strftime('%H:%M:%S')}"
+            )
+            screen_buffer.append(compact_line)
+            # Clear screen and print compact line
+            console = get_themed_console()
+            console.clear()
+            for line in screen_buffer[1:]:
+                console.print(line)
+            stop_event.wait(timeout=3.0)
+            continue
+
+        active_block = find_active_block(data["blocks"])
+
+        if not active_block:
+            # Compact mode for no active session
+            no_session_line = create_no_session_compact_line(token_limit, args.timezone)
+            screen_buffer.append(no_session_line)
+            # Clear screen and print compact line
+            console = get_themed_console()
+            console.clear()
+            for line in screen_buffer[1:]:
+                console.print(line)
+            stop_event.wait(timeout=3.0)
+            continue
+
+        # Extract and process token data
+        token_data = process_token_data(active_block, args, data["blocks"], token_limit)
+
+        # Extract and process time data
+        time_data = process_time_data(active_block, datetime.now(UTC_TZ))
+
+        # Always use UTC for internal calculations
+        current_time = datetime.now(UTC_TZ)
+
+        # Calculate burn rate from ALL sessions in the last hour
+        burn_rate = calculate_hourly_burn_rate(data["blocks"], current_time)
+
+        # Calculate time to reset
+        time_to_reset = time_data["reset_time"] - current_time
+        minutes_to_reset = time_to_reset.total_seconds() / 60
+
+        # Calculate predictions for display
+        predictions = calculate_predictions(
+            current_time,
+            time_data["reset_time"],
+            burn_rate,
+            token_data["tokens_left"],
+            args.timezone,
+        )
+
+        # Create the compact line
+        if compact_formatter:
+            burn_rate_data = active_block.get("burnRate")
+            burn_val = (
+                burn_rate_data.get("tokensPerMinute", 0)
+                if burn_rate_data
+                else burn_rate
+            )
+
+            line = compact_formatter.format_compact_line(
+                token_data["tokens_used"],
+                token_data["token_limit"],
+                burn_val,
+                predictions["predicted_end_str"],
+                predictions["reset_time_str"],
+                current_time,
+            )
+            screen_buffer.append(line)
+
+        # Handle notifications
+        notifications = handle_notifications(
+            token_data,
+            predictions["predicted_end_time"],
+            time_data["reset_time"],
+            current_time,
+            args,
+        )
+
+        # Add critical notifications if necessary
+        if notifications["show_switch"]:
+            screen_buffer.append("")
+            warning_msg = (
+                f"🔄 WARNING: Switched to custom_max ({token_data['token_limit']:,})"
+            )
+            screen_buffer.append(warning_msg)
+        if notifications["show_exceed"]:
+            screen_buffer.append("")
+            error_msg = (
+                f"🚨 ERROR: TOKENS EXCEEDED MAX LIMIT! "
+                f"({token_data['tokens_used']:,} > "
+                f"{token_data['token_limit']:,})"
+            )
+            screen_buffer.append(error_msg)
+        if notifications["show_will_run_out"]:
+            screen_buffer.append("")
+            screen_buffer.append("⚠️ ERROR: Tokens will run out BEFORE reset!")
+
+        # Clear screen and print compact display
+        console = get_themed_console()
+        console.clear()
+        for line in screen_buffer[1:]:  # Skip position control
+            console.print(line)
+
+        stop_event.wait(timeout=3.0)
+
+
+def run_normal_mode(args, token_limit, stop_event):
+    """Handle normal mode monitoring loop."""
+    while True:
+        # Flush any pending input to prevent display corruption
+        flush_input()
+
+        # Build complete screen in buffer
+        screen_buffer = []
+        screen_buffer.append("\033[H")  # Home position
+
+        data = fetch_and_validate_data()
+        if not data:
+            display_error_screen()
+            # Clear screen and print buffer with theme support
+            console = get_themed_console()
+            console.clear()
+            for line in screen_buffer[1:]:  # Skip position control
+                console.print(line)
+            stop_event.wait(timeout=3.0)
+            continue
+
+        active_block = find_active_block(data["blocks"])
+
+        if not active_block:
+            # Normal mode for no active session
+            screen_buffer.extend(print_header())
+            screen_buffer.append(
+                "📊 [value]Token Usage:[/]    🟢 [[cost.low]" + "░" * 50 + "[/]] 0.0%"
+            )
+            screen_buffer.append("")
+            tokens_display = (
+                f"🎯 [value]Tokens:[/]         [value]0[/] / "
+                f"[dim]~{token_limit:,}[/] ([info]0 left[/])"
+            )
+            screen_buffer.append(tokens_display)
+            burn_rate_display = (
+                "🔥 [value]Burn Rate:[/]      [warning]0.0[/] [dim]tokens/min[/]"
+            )
+            screen_buffer.append(burn_rate_display)
+            screen_buffer.append("")
+            # Use configured timezone for time display
+            display_tz = get_display_timezone(args.timezone)
+            current_time_display = datetime.now(UTC_TZ).astimezone(display_tz)
+            current_time_str = current_time_display.strftime("%H:%M:%S")
+            status_line = (
+                f"⏰ [dim]{current_time_str}[/] 📝 "
+                f"[info]No active session[/] | "
+                f"[dim]Ctrl+C to exit[/] 🟨"
+            )
+            screen_buffer.append(status_line)
+            # Clear screen and print buffer with theme support
+            console = get_themed_console()
+            console.clear()
+            for line in screen_buffer[1:]:  # Skip position control
+                console.print(line)
+            stop_event.wait(timeout=3.0)
+            continue
+
+        # Extract and process token data
+        token_data = process_token_data(active_block, args, data["blocks"], token_limit)
+
+        # Extract and process time data
+        time_data = process_time_data(active_block, datetime.now(UTC_TZ))
+
+        # Always use UTC for internal calculations
+        current_time = datetime.now(UTC_TZ)
+
+        # Calculate burn rate from ALL sessions in the last hour
+        burn_rate = calculate_hourly_burn_rate(data["blocks"], current_time)
+
+        # Calculate time to reset
+        time_to_reset = time_data["reset_time"] - current_time
+        minutes_to_reset = time_to_reset.total_seconds() / 60
+
+        # Calculate predictions for display
+        predictions = calculate_predictions(
+            current_time,
+            time_data["reset_time"],
+            burn_rate,
+            token_data["tokens_left"],
+            args.timezone,
+        )
+
+        # Display header
+        screen_buffer.extend(print_header())
+
+        # Token Usage section
+        token_progress = create_token_progress_bar(token_data["usage_percentage"])
+        screen_buffer.append(f"📊 [value]Token Usage:[/]    {token_progress}")
+        screen_buffer.append("")
+
+        # Time to Reset section - calculate progress based on actual session duration
+        if time_data["start_time"] and time_data["reset_time"]:
+            # Calculate actual session duration and elapsed time
+            total_session_minutes = (
+                time_data["reset_time"] - time_data["start_time"]
+            ).total_seconds() / 60
+            elapsed_session_minutes = (
+                current_time - time_data["start_time"]
+            ).total_seconds() / 60
+            elapsed_session_minutes = max(
+                0, elapsed_session_minutes
+            )  # Ensure non-negative
+        else:
+            # Fallback to 5 hours if times not available
+            total_session_minutes = 300
+            elapsed_session_minutes = max(0, 300 - minutes_to_reset)
+
+        time_progress = create_time_progress_bar(
+            elapsed_session_minutes, total_session_minutes
+        )
+        screen_buffer.append(f"⏳ [value]Time to Reset:[/]  {time_progress}")
+        screen_buffer.append("")
+
+        # Detailed stats
+        tokens_details = (
+            f"🎯 [value]Tokens:[/]         "
+            f"[value]{token_data['tokens_used']:,}[/] / "
+            f"[dim]~{token_limit:,}[/] "
+            f"([info]{token_data['tokens_left']:,} left[/])"
+        )
+        screen_buffer.append(tokens_details)
+        burn_rate_details = (
+            f"🔥 [value]Burn Rate:[/]      "
+            f"[warning]{burn_rate:.1f}[/] "
+            f"[dim]tokens/min[/]"
+        )
+        screen_buffer.append(burn_rate_details)
+        screen_buffer.append("")
+
+        predicted_end_display = (
+            f"🏁 [value]Predicted End:[/] {predictions['predicted_end_str']}"
+        )
+        screen_buffer.append(predicted_end_display)
+        reset_time_display = (
+            f"🔄 [value]Token Reset:[/]   {predictions['reset_time_str']}"
+        )
+        screen_buffer.append(reset_time_display)
+        screen_buffer.append("")
+
+        # Update persistent notifications using current conditions
+        notifications = handle_notifications(
+            token_data,
+            predictions["predicted_end_time"],
+            time_data["reset_time"],
+            current_time,
+            args,
+        )
+
+        # Normal mode - display existing notifications
+        if notifications["show_switch"]:
+            switch_msg = (
+                f"🔄 [warning]Tokens exceeded {args.plan.upper()} "
+                f"limit - switched to custom_max "
+                f"({token_data['token_limit']:,})[/]"
+            )
+            screen_buffer.append(switch_msg)
+            screen_buffer.append("")
+
+        if notifications["show_exceed"]:
+            exceed_msg = (
+                f"🚨 [error]TOKENS EXCEEDED MAX LIMIT! "
+                f"({token_data['tokens_used']:,} > "
+                f"{token_data['token_limit']:,})[/]"
+            )
+            screen_buffer.append(exceed_msg)
+            screen_buffer.append("")
+
+        if notifications["show_will_run_out"]:
+            screen_buffer.append("⚠️  [error]Tokens will run out BEFORE reset![/]")
+            screen_buffer.append("")
+
+        # Status line - use configured timezone for consistency
+        display_tz = get_display_timezone(args.timezone)
+        current_time_display = datetime.now(UTC_TZ).astimezone(display_tz)
+        current_time_str = current_time_display.strftime("%H:%M:%S")
+        status_line = (
+            f"⏰ [dim]{current_time_str}[/] 📝 "
+            f"[info]Smooth sailing...[/] | "
+            f"[dim]Ctrl+C to exit[/] 🟨"
+        )
+        screen_buffer.append(status_line)
+
+        # Clear screen and print entire buffer at once with theme support
+        console = get_themed_console()
+        console.clear()
+        for line in screen_buffer[1:]:  # Skip position control
+            console.print(line)
+
+        stop_event.wait(timeout=3.0)
 def determine_language(args):
     """
     Determine the language to use in order of priority:
@@ -387,6 +857,24 @@ def main():
         from usage_analyzer.themes.console import debug_theme_info
 
         debug_info = debug_theme_info()
+        print_themed("🎨 Theme Detection Debug Information", style="header")
+        print_themed(f"Current theme: {debug_info['current_theme']}", style="info")
+        print_themed(
+            f"Console initialized: {debug_info['console_initialized']}", style="value"
+        )
+
+        detector_info = debug_info["detector_info"]
+        print_themed("Environment variables:", style="subheader")
+        for key, value in detector_info["environment_vars"].items():
+            if value:
+                print_themed(f"  {key}: {value}", style="label")
+
+        caps = detector_info["terminal_capabilities"]
+        print_themed(
+            f"Terminal capabilities: {caps['colors']} colors, truecolor: {caps['truecolor']}",
+            style="info",
+        )
+        print_themed(f"Platform: {detector_info['platform']}", style="value")
         print_themed(message="🎨 Theme Detection Debug Information", style="header")
         print_themed(
             message=f"Current theme: {debug_info['current_theme']}", style="info"
@@ -419,6 +907,7 @@ def main():
     # For 'custom_max' plan, we need to get data first to determine the limit
     if args.plan == "custom_max":
         print_themed(
+            "Fetching initial data to determine custom max token limit...", style="info"
             message="Fetching initial data to determine custom max token limit...",
             style="info",
         )
@@ -426,17 +915,24 @@ def main():
         if initial_data and "blocks" in initial_data:
             token_limit = get_token_limit(args.plan, initial_data["blocks"])
             print_themed(
+                f"Custom max token limit detected: {token_limit:,}", style="info"
                 message=f"Custom max token limit detected: {token_limit:,}",
                 style="info",
             )
         else:
             token_limit = get_token_limit("pro")  # Fallback to pro
             print_themed(
+                f"Failed to fetch data, falling back to Pro limit: {token_limit:,}",
                 message=f"Failed to fetch data, falling back to Pro limit: {token_limit:,}",
                 style="warning",
             )
     else:
         token_limit = get_token_limit(args.plan)
+
+    # Initialize compact formatter if needed
+    compact_formatter = None
+    if args.compact:
+        compact_formatter = CompactFormatter()
 
     try:
         # Enter alternate screen buffer, clear and hide cursor
@@ -445,6 +941,10 @@ def main():
         # Show loading screen immediately
         show_loading_screen()
 
+        if args.compact:
+            run_compact_mode(args, token_limit, compact_formatter, stop_event)
+        else:
+            run_normal_mode(args, token_limit, stop_event)
         # Import message keys for main display
         from usage_analyzer.i18n.message_keys import ERROR, STATUS, UI
 

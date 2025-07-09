@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 
 from usage_analyzer.core.calculator import BurnRateCalculator
 from usage_analyzer.models.data_structures import SessionBlock
-from usage_analyzer.themes import print_themed
+from usage_analyzer.themes import get_themed_console, print_themed
 from usage_analyzer.utils.pricing_fetcher import ClaudePricingFetcher
 
 

@@ -63,6 +63,8 @@ class CompactFormatter:
 
     def _format_tokens(self, tokens):
         """Convertit les tokens en format K/M pour économiser l'espace."""
+        if not isinstance(tokens, int) or tokens < 0:
+            raise ValueError("tokens doit être un entier non négatif")
         if tokens >= 1_000_000:
             return f"{tokens / 1_000_000:.1f}M"
         elif tokens >= 1_000:

@@ -31,11 +31,14 @@ class BurnRateCalculator:
 
         # Calculate rates
         tokens_per_minute = total_tokens / block.duration_minutes
-        cost_per_hour = (block.cost_usd / block.duration_minutes) * 60 if block.duration_minutes > 0 else 0
+        cost_per_hour = (
+            (block.cost_usd / block.duration_minutes) * 60
+            if block.duration_minutes > 0
+            else 0
+        )
 
         return BurnRate(
-            tokens_per_minute=tokens_per_minute,
-            cost_per_hour=cost_per_hour
+            tokens_per_minute=tokens_per_minute, cost_per_hour=cost_per_hour
         )
 
         cost_per_hour = (
@@ -80,6 +83,5 @@ class BurnRateCalculator:
         return UsageProjection(
             projected_total_tokens=int(projected_total_tokens),
             projected_total_cost=projected_total_cost,
-            remaining_minutes=int(remaining_minutes)
             remaining_minutes=int(remaining_minutes),
         )

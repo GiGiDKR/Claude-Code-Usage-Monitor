@@ -907,7 +907,7 @@ def main():
     # For 'custom_max' plan, we need to get data first to determine the limit
     if args.plan == "custom_max":
         print_themed(
-            "Fetching initial data to determine custom max token limit...", style="info"
+            "Fetching initial data to determine custom max token limit...",
             message="Fetching initial data to determine custom max token limit...",
             style="info",
         )
@@ -915,7 +915,7 @@ def main():
         if initial_data and "blocks" in initial_data:
             token_limit = get_token_limit(args.plan, initial_data["blocks"])
             print_themed(
-                f"Custom max token limit detected: {token_limit:,}", style="info"
+                f"Custom max token limit detected: {token_limit:,}",
                 message=f"Custom max token limit detected: {token_limit:,}",
                 style="info",
             )

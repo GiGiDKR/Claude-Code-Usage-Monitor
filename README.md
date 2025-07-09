@@ -272,7 +272,7 @@ claude-monitor --theme-debug
 #### Compact Mode
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/GiGiDKR/Claude-Code-Usage-Monitor/main/doc/cm.png">
+  <img src="https://raw.githubusercontent.com/GiGiDKR/Claude-Code-Usage-Monitor/main/doc/compact.png">
 </p>
 
 For narrow terminals, tmux integration, or when you need minimal screen space:

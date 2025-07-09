@@ -1051,16 +1051,13 @@ def main():
                 predicted_end_str = predicted_end_local.strftime("%H:%M")
                 reset_time_str = reset_time_local.strftime("%H:%M")
                 if compact_formatter:
-                    compact_line = compact_formatter.format(
+                    compact_line = compact_formatter.format_compact_line(
                         tokens_used,
                         token_limit,
-                        usage_percentage,
                         burn_rate,
                         predicted_end_str,
                         reset_time_str,
                         current_time_str,
-                        tokens_left,
-                        language=language,
                     )
                 else:
                     compact_line = f"Claude : {tokens_used}/{token_limit} ({usage_percentage:.1f}%) | 🔥{burn_rate:.1f}/min | End: {predicted_end_str} | Reset: {reset_time_str} | {current_time_str}"

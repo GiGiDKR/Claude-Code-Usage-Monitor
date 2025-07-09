@@ -124,12 +124,14 @@ class DataLoader:
         """Create a unique identifier for deduplication using message ID and request ID."""
         # Try to get message ID from different possible locations
         message_id = None
+        request_id = data.get('requestId') or data.get('request_id')
         request_id = data.get("requestId") or data.get("request_id")
 
         # Check different message structures
         if "message" in data and isinstance(data["message"], dict):
             message_id = data["message"].get("id")
         else:
+            message_id = data.get('message_id')
             message_id = data.get("message_id")
 
         if message_id is None or request_id is None:
@@ -146,14 +148,23 @@ class DataLoader:
             if "timestamp" not in data:
                 return None
 
+            timestamp = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
             timestamp = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
 
             # Handle both nested and flat usage data
             usage = data.get("usage", {})
             if not usage:
                 # Try extracting from message structure
-                message = data.get("message", {})
-                usage = message.get("usage", {})
+                message = data.get('message', {})
+                usage = message.get('usage', {})
+
+            # Extract token counts
+            input_tokens = usage.get('input_tokens', 0) or 0
+            output_tokens = usage.get('output_tokens', 0) or 0
+            cache_creation_tokens = usage.get('cache_creation_input_tokens', 0) or 0
+            cache_read_tokens = usage.get('cache_read_input_tokens', 0) or 0
+            message = data.get("message", {})
+            usage = message.get("usage", {})
 
             # Extract token counts
             input_tokens = usage.get("input_tokens", 0) or 0

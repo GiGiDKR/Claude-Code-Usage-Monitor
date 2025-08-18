@@ -477,7 +477,7 @@ class SessionDisplayComponent:
             ),
             (f"🔥 [value]{_('Burn Rate')}:[/]", "[warning]0.0[/] [dim]tokens/min[/]"),
             (f"💲 [value]{_('Cost Rate')}:[/]", "[cost.low]$0.00[/] [dim]$/min[/]"),
-            (f"� [value]{_('Sent Messages')}:[/]", "[info]0[/] [dim]messages[/]"),
+            (f"📨 [value]{_('Sent Messages')}:[/]", "[info]0[/] [dim]messages[/]"),
         ]
 
         # Créer et rendre les statistiques avec alignement dynamique

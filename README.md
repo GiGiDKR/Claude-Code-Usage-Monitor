@@ -189,7 +189,7 @@ claude-monitor --help
 |-----------|------|---------|-------------|
 | --plan | string | custom | Plan type: pro, max5, max20, or custom |
 | --custom-limit-tokens | int | None | Token limit for custom plan (must be > 0) |
-| --language | string | auto | Interface language: en, fr, es, de, or auto (system detection) |
+| --language | string | auto | Interface language: en, fr, es, de, or auto |
 | --timezone | string | auto | Timezone (auto-detected). Examples: UTC, America/New_York, Europe/London |
 | --time-format | string | auto | Time format: 12h, 24h, or auto |
 | --theme | string | auto | Display theme: light, dark, classic, or auto |

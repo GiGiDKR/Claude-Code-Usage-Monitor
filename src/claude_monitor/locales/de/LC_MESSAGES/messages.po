@@ -192,3 +192,14 @@ msgstr "Das Kostenlimit wird vor dem Reset überschritten!"
 msgid "No active session"
 msgstr "Keine aktive Sitzung"
 
+msgid "Ctrl+C to exit"
+msgstr "Strg+C zum Beenden"
+
+msgid "Analyzing usage data to determine cost limits..."
+msgstr "Analysiere Nutzungsdaten zur Bestimmung der Kostenlimits..."
+
+msgid "P90 session limit calculated: {tokens} tokens"
+msgstr "P90-Sitzungslimit berechnet: {tokens} Token"
+
+msgid "Monitoring stopped."
+msgstr "Überwachung gestoppt."

@@ -192,3 +192,14 @@ msgstr "¡El límite de costos se superará antes del reinicio!"
 msgid "No active session"
 msgstr "No hay sesión activa"
 
+msgid "Ctrl+C to exit"
+msgstr "Ctrl+C para salir"
+
+msgid "Analyzing usage data to determine cost limits..."
+msgstr "Analizando datos de uso para determinar límites de costo..."
+
+msgid "P90 session limit calculated: {tokens} tokens"
+msgstr "Límite de sesión P90 calculado: {tokens} tokens"
+
+msgid "Monitoring stopped."
+msgstr "Monitoreo detenido."

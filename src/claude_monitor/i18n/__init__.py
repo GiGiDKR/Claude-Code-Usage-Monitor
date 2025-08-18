@@ -1,11 +1,77 @@
 """Public API for Claude Monitor internationalization."""
 
 import logging
+from pathlib import Path
 from typing import Callable, Optional
 
 from .core import get_i18n_core, initialize_i18n_core
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_compiled_translations() -> None:
+    """Ensure translations are compiled (.mo files exist).
+
+    If .mo files are missing but .po files exist, attempt to compile them.
+    """
+    try:
+        current_dir = Path(__file__).parent.parent
+        locales_dir = current_dir / "locales"
+        if not locales_dir.exists():
+            return
+        # Checks if at least one .mo file is missing for a present language
+        needs_compilation = False
+        for lang_dir in locales_dir.iterdir():
+            if lang_dir.is_dir():
+                po_file = lang_dir / "LC_MESSAGES" / "messages.po"
+                mo_file = lang_dir / "LC_MESSAGES" / "messages.mo"
+                if po_file.exists() and not mo_file.exists():
+                    needs_compilation = True
+                    break
+        if needs_compilation:
+            logger.info("Compiling missing translation files...")
+            _compile_translations_fallback()
+    except Exception as e:
+        logger.debug(f"Could not check/compile translations: {e}")
+        # Fail silently - translations will fall back to English
+
+
+def _compile_translations_fallback() -> None:
+    """Fallback translation compilation using polib directly."""
+    try:
+        import polib
+
+        current_dir = Path(__file__).parent.parent
+        locales_dir = current_dir / "locales"
+        for lang_dir in locales_dir.iterdir():
+            if lang_dir.is_dir():
+                po_file = lang_dir / "LC_MESSAGES" / "messages.po"
+                mo_file = lang_dir / "LC_MESSAGES" / "messages.mo"
+                if po_file.exists():
+                    try:
+                        po = polib.pofile(str(po_file))
+                        po.save_as_mofile(str(mo_file))
+                        logger.info(f"Compiled {lang_dir.name} translations")
+                    except Exception as e:
+                        logger.warning(f"Failed to compile {lang_dir.name}: {e}")
+    except ImportError:
+        logger.debug("polib not available for translation compilation")
+    except Exception as e:
+        logger.debug(f"Translation compilation failed: {e}")
+
+
+def compile_translations() -> bool:
+    """Public API to compile translations programmatically.
+
+    Returns:
+        True if compilation was successful, False otherwise
+    """
+    try:
+        _compile_translations_fallback()
+        return True
+    except Exception as e:
+        logger.error(f"Translation compilation failed: {e}")
+        return False
 
 
 def _(message: str, **kwargs) -> str:
@@ -135,10 +201,21 @@ def get_available_languages() -> list[str]:
         List of available language codes
     """
     try:
+        # Dynamically detects available languages in locales
+        current_dir = Path(__file__).parent.parent
+        locales_dir = current_dir / "locales"
+        langs = []
+        if locales_dir.exists():
+            for lang_dir in locales_dir.iterdir():
+                if lang_dir.is_dir():
+                    langs.append(lang_dir.name)
+        if langs:
+            return langs
+        # Fallback to core if nothing found
         i18n_core = get_i18n_core()
         return i18n_core.available_languages
-    except RuntimeError:
-        return ["en", "fr", "es", "de"]  # Default list
+    except Exception:
+        return ["en"]
 
 
 def init_i18n(
@@ -156,7 +233,6 @@ def init_i18n(
     """
     try:
         if language_code is None:
-            # First check environment variables
             import os
 
             env_lang = (
@@ -164,41 +240,30 @@ def init_i18n(
                 or os.environ.get("LANG")
                 or os.environ.get("LC_ALL")
             )
-
             if env_lang:
                 language_code = env_lang.split("_")[0].split(".")[0].lower()
-                if language_code not in ["en", "fr", "es", "de"]:
-                    language_code = None  # Fallback to auto-detection
-
-            # If no environment variable, auto-detect system locale
-            if language_code is None:
-                import locale
-
-                try:
-                    system_locale = locale.getdefaultlocale()[0]
-                    if system_locale:
-                        language_code = system_locale.split("_")[0].lower()
-                        if language_code not in ["en", "fr", "es", "de"]:
-                            language_code = fallback_language
-                    else:
-                        language_code = fallback_language
-                except Exception:
-                    language_code = fallback_language
-
+            # Dynamic detection of available languages
+            current_dir = Path(__file__).parent.parent
+            locales_dir = current_dir / "locales"
+            available_langs = []
+            if locales_dir.exists():
+                for lang_dir in locales_dir.iterdir():
+                    if lang_dir.is_dir():
+                        available_langs.append(lang_dir.name)
+            # If the detected language is not available, fallback
+            if language_code not in available_langs:
+                language_code = fallback_language
         initialize_i18n_core(language_code)
-        # initialize_formatter(language_code)  # Temporarily disabled
-
         logger.info(f"i18n initialized with language: {language_code}")
-
     except Exception as e:
         logger.error(f"Failed to initialize i18n: {e}")
-        # Fallback initialization
         try:
             initialize_i18n_core(fallback_language)
         except Exception as fallback_error:
             logger.critical(
                 f"Even fallback i18n initialization failed: {fallback_error}"
             )
+    _ensure_compiled_translations()
 
 
 # Aliases for compatibility with standard gettext

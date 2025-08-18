@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import pytz
+from rich.table import Table
 
 from claude_monitor.i18n import _
 from claude_monitor.ui.components import CostIndicator, VelocityIndicator
@@ -94,6 +95,56 @@ class SessionDisplayComponent:
             )
 
         return f"{color} [{filled_bar}]"
+
+    def _create_aligned_stats_grid(self, stats_data: list[tuple[str, str]]) -> Table:
+        """Create an aligned grid for displaying statistics.
+
+        Args:
+            stats_data: List of tuples (label, value) for each statistic
+
+        Returns:
+            Configured Table with aligned statistics
+        """
+        table = Table(
+            show_header=False, show_lines=False, show_edge=False, padding=(0, 1)
+        )
+        table.add_column(justify="left")  # Column for labels
+        table.add_column(justify="left")  # Column for values
+
+        for label, value in stats_data:
+            table.add_row(label, value)
+
+        return table
+
+    def _format_aligned_stats(self, stats_data: list[tuple[str, str]]) -> list[str]:
+        """Format statistics with dynamic alignment based on translated labels.
+
+        Args:
+            stats_data: List of tuples (label, value) for each statistic
+
+        Returns:
+            List of formatted strings with proper alignment
+        """
+        from rich.text import Text
+
+        # Calculate the maximum display width of all labels
+        max_label_width = 0
+        for label, value in stats_data:
+            label_display_width = Text.from_markup(label).cell_len
+            max_label_width = max(max_label_width, label_display_width)
+
+        # Add some padding for better visual spacing
+        padding_width = max_label_width + 4
+
+        # Format each statistic with consistent alignment
+        formatted_stats = []
+        for label, value in stats_data:
+            label_display_width = Text.from_markup(label).cell_len
+            padding_needed = max(0, padding_width - label_display_width)
+            formatted_line = f"{label}{' ' * padding_needed}{value}"
+            formatted_stats.append(formatted_line)
+
+        return formatted_stats
 
     def format_active_session_screen_v2(self, data: SessionDisplayData) -> list[str]:
         """Format complete active session screen using data class.
@@ -280,33 +331,39 @@ class SessionDisplayComponent:
                 else 0
             )
             cost_per_min_display = CostIndicator.render(cost_per_min)
-            screen_buffer.append(f"💲 [value]{_('Session Cost')}:[/]   {cost_display}")
-            screen_buffer.append(
-                f"💲 [value]{_('Cost Rate')}:[/]      {cost_per_min_display} [dim]$/min[/]"
-            )
-            screen_buffer.append("")
-
             token_bar = self.token_progress.render(usage_percentage)
-            screen_buffer.append(f"📊 [value]{_('Token Usage')}:[/]    {token_bar}")
-            screen_buffer.append("")
-
-            screen_buffer.append(
-                f"🎯 [value]{_('Tokens')}:[/]         [value]{tokens_used:,}[/] / [dim]~{token_limit:,}[/] ([info]{tokens_left:,} {_('left')}[/])"
-            )
-
             velocity_emoji = VelocityIndicator.get_velocity_emoji(burn_rate)
-            screen_buffer.append(
-                f"🔥 [value]{_('Burn Rate')}:[/]      [warning]{burn_rate:.1f}[/] [dim]tokens/min[/] {velocity_emoji}"
-            )
 
-            screen_buffer.append(
-                f"📨 [value]{_('Sent Messages')}:[/]  [info]{sent_messages}[/] [dim]messages[/]"
-            )
+            # Regrouper les statistiques pour la table
+            stats_data = [
+                (f"💲 [value]{_('Session Cost')}:[/]", cost_display),
+                (
+                    f"💲 [value]{_('Cost Rate')}:[/]",
+                    f"{cost_per_min_display} [dim]$/min[/]",
+                ),
+                (f"📊 [value]{_('Token Usage')}:[/]", token_bar),
+                (
+                    f"🎯 [value]{_('Tokens')}:[/]",
+                    f"[value]{tokens_used:,}[/] / [dim]~{token_limit:,}[/] "
+                    f"([info]{tokens_left:,} {_('left')}[/])",
+                ),
+                (
+                    f"🔥 [value]{_('Burn Rate')}:[/]",
+                    f"[warning]{burn_rate:.1f}[/] [dim]tokens/min[/] {velocity_emoji}",
+                ),
+                (
+                    f"📨 [value]{_('Sent Messages')}:[/]",
+                    f"[info]{sent_messages}[/] [dim]messages[/]",
+                ),
+            ]
 
             if per_model_stats:
                 model_bar = self.model_usage.render(per_model_stats)
-                screen_buffer.append(f"🤖 [value]{_('Model Usage')}:[/]    {model_bar}")
+                stats_data.append((f"🤖 [value]{_('Model Usage')}:[/]", model_bar))
 
+            # Formater les statistiques avec alignement dynamique
+            formatted_stats = self._format_aligned_stats(stats_data)
+            screen_buffer.extend(formatted_stats)
             screen_buffer.append("")
 
             time_bar = self.time_progress.render(
@@ -335,7 +392,8 @@ class SessionDisplayComponent:
         )
 
         screen_buffer.append(
-            f"⏰ [dim]{current_time_str}[/] 📝 [success]Active session[/] | [dim]Ctrl+C to exit[/] 🟢"
+            f"⏰ [dim]{current_time_str}[/] 📝 [success]Active session[/] | "
+            f"[dim]{_('Ctrl+C to exit')}[/] 🟢"
         )
 
         return screen_buffer
@@ -409,21 +467,22 @@ class SessionDisplayComponent:
         screen_buffer.extend(header_manager.create_header(plan, timezone))
 
         empty_token_bar = self.token_progress.render(0.0)
-        screen_buffer.append(f"📊 [value]{_('Token Usage')}:[/]    {empty_token_bar}")
-        screen_buffer.append("")
 
-        screen_buffer.append(
-            f"🎯 [value]{_('Tokens')}:[/]         [value]0[/] / [dim]~{token_limit:,}[/] ([info]0 {_('left')}[/])"
-        )
-        screen_buffer.append(
-            f"🔥 [value]{_('Burn Rate')}:[/]      [warning]0.0[/] [dim]tokens/min[/]"
-        )
-        screen_buffer.append(
-            f"💲 [value]{_('Cost Rate')}:[/]      [cost.low]$0.00[/] [dim]$/min[/]"
-        )
-        screen_buffer.append(
-            f"📨 [value]{_('Sent Messages')}:[/]  [info]0[/] [dim]messages[/]"
-        )
+        # Regrouper les statistiques pour la table
+        stats_data = [
+            (f"📊 [value]{_('Token Usage')}:[/]", empty_token_bar),
+            (
+                f"🎯 [value]{_('Tokens')}:[/]",
+                f"[value]0[/] / [dim]~{token_limit:,}[/] ([info]0 {_('left')}[/])",
+            ),
+            (f"🔥 [value]{_('Burn Rate')}:[/]", "[warning]0.0[/] [dim]tokens/min[/]"),
+            (f"💲 [value]{_('Cost Rate')}:[/]", "[cost.low]$0.00[/] [dim]$/min[/]"),
+            (f"� [value]{_('Sent Messages')}:[/]", "[info]0[/] [dim]messages[/]"),
+        ]
+
+        # Créer et rendre les statistiques avec alignement dynamique
+        formatted_stats = self._format_aligned_stats(stats_data)
+        screen_buffer.extend(formatted_stats)
         screen_buffer.append("")
 
         if current_time and args:
@@ -436,15 +495,20 @@ class SessionDisplayComponent:
                     include_seconds=True,
                 )
                 screen_buffer.append(
-                    f"⏰ [dim]{current_time_str}[/] 📝 [info]{_('No active session')}[/] | [dim]Ctrl+C to exit[/] 🟨"
+                    f"⏰ [dim]{current_time_str}[/] 📝 "
+                    f"[info]{_('No active session')}[/] | "
+                    f"[dim]{_('Ctrl+C to exit')}[/] 🟨"
                 )
             except (pytz.exceptions.UnknownTimeZoneError, AttributeError):
                 screen_buffer.append(
-                    f"⏰ [dim]--:--:--[/] 📝 [info]{_('No active session')}[/] | [dim]Ctrl+C to exit[/] 🟨"
+                    f"⏰ [dim]--:--:--[/] 📝 "
+                    f"[info]{_('No active session')}[/] | "
+                    f"[dim]{_('Ctrl+C to exit')}[/] 🟨"
                 )
         else:
             screen_buffer.append(
-                f"⏰ [dim]--:--:--[/] 📝 [info]{_('No active session')}[/] | [dim]Ctrl+C to exit[/] 🟨"
+                f"⏰ [dim]--:--:--[/] 📝 [info]{_('No active session')}[/] | "
+                f"[dim]{_('Ctrl+C to exit')}[/] 🟨"
             )
 
         return screen_buffer

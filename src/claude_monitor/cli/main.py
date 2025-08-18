@@ -318,7 +318,9 @@ def _get_initial_token_limit(
             return custom_limit
 
         # Otherwise, analyze usage data to calculate P90
-        print_themed("Analyzing usage data to determine cost limits...", style="info")
+        print_themed(
+            _("Analyzing usage data to determine cost limits..."), style="info"
+        )
 
         try:
             # Use quick start mode for faster initial load
@@ -334,7 +336,9 @@ def _get_initial_token_limit(
                 token_limit: int = get_token_limit(plan, blocks)
 
                 print_themed(
-                    f"P90 session limit calculated: {token_limit:,} tokens",
+                    _("P90 session limit calculated: {tokens} tokens").format(
+                        tokens=f"{token_limit:,}"
+                    ),
                     style="info",
                 )
 

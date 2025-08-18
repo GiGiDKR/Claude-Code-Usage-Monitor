@@ -198,3 +198,14 @@ msgstr "La limite de coût sera dépassée avant la réinitialisation !"
 msgid "No active session"
 msgstr "Aucune session active"
 
+msgid "Ctrl+C to exit"
+msgstr "Ctrl+C pour quitter"
+
+msgid "Analyzing usage data to determine cost limits..."
+msgstr "Analyse des données d'utilisation pour déterminer les limites de coût..."
+
+msgid "P90 session limit calculated: {tokens} tokens"
+msgstr "Limite de session P90 calculée : {tokens} jetons"
+
+msgid "Monitoring stopped."
+msgstr "Surveillance arrêtée."
